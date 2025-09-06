@@ -12,7 +12,7 @@
   :root{--bg:#0b0f14;--panel:#121820;--muted:#2b3542;--text:#e6eef8;--accent:#7dd3fc;--good:#34d399;--warn:#fbbf24;--danger:#f87171;--shadow:0 10px 30px rgba(0,0,0,.35)}
   *{box-sizing:border-box} html,body{height:100%}
   body{margin:0;background:linear-gradient(180deg,#0a0e13,#0c1219 50%,#0a0e13);color:var(--text);font:14px/1.4 Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-  .app{display:grid;grid-template-columns:320px 1fr;gap:16px;padding:16px;height:100%}
+  .app{display:grid;grid-template-columns:22% 1fr;gap:16px;padding:16px;height:100%}
   .panel{background:var(--panel);border:1px solid var(--muted);border-radius:14px;box-shadow:var(--shadow)}
   .left{display:flex;flex-direction:column;padding:14px}
   .title{font-weight:700;font-size:16px;letter-spacing:.2px;margin-bottom:10px}
@@ -52,7 +52,7 @@
 <body>
 <div class="app">
   <!-- LEFT -->
-  <div class="panel left">
+  <div class="panel left" style="overflow-y:scroll;">
     <div class="title">Detection Tuner <span class="subtle">(Color threshold)</span></div>
     <div class="subtle">1) Upload ROI videos. 2) Tune thresholds. 3) Preview or Batch.</div>
 
@@ -88,6 +88,10 @@
     <div class="divider"></div>
     <div class="subtle">Jobs</div>
     <div id="jobs" class="subtle" style="overflow: scroll;">None yet.</div>
+    <div class="divider"></div>
+    <a href="./record.html" target="_blank" class="btn" style="margin-top: 20px;">Camera Recorder Webpage</a>
+    <a href="./split.html" target="_blank" class="btn" style="margin-top: 20px;">Video Splitter Webpage</a>
+    <a href="./roi.html" target="_blank" class="btn" style="margin-top: 20px;">ROI Extractor Webpage</a>
   </div>
 
   <!-- RIGHT -->

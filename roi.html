@@ -16,7 +16,7 @@
     *{box-sizing:border-box}
     html,body{height:100%}
     body{margin:0;background:linear-gradient(180deg,#0a0e13,#0c1219 50%,#0a0e13);color:var(--text);font:14px/1.4 Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-    .app{display:grid;grid-template-columns:320px 1fr;gap:16px;padding:16px;height:100%}
+    .app{display:grid;grid-template-columns:22% 1fr;gap:16px;padding:16px;height:100%}
     .panel{background:var(--panel);border:1px solid var(--muted);border-radius:14px;box-shadow:var(--shadow)}
     .left{display:flex;flex-direction:column;padding:14px}
     .title{font-weight:700;font-size:16px;letter-spacing:.2px;margin-bottom:10px}
@@ -73,7 +73,7 @@
 <body>
   <div class="app">
     <!-- LEFT PANEL -->
-    <div class="panel left">
+    <div class="panel left" style="overflow-y:scroll;">
       <div class="title">ROI Extractor <span class="subtle"></span></div>
 
       <div class="subtle">1) Load a video, 2) choose a tool, 3) draw ROIs. 4) Export ROI videos and JSON when done.</div>
@@ -137,12 +137,13 @@
                 <div class="divider"></div>
 
 
-        <a href="./split.html" target="_blank" class="btn" style="margin-top: 20px;">Video Splitter Webpage</a>
         <a href="./record.html" target="_blank" class="btn" style="margin-top: 20px;">Camera Recorder Webpage</a>
+        <a href="./split.html" target="_blank" class="btn" style="margin-top: 20px;">Video Splitter Webpage</a>
+        <a href="./detect.html" target="_blank" class="btn" style="margin-top: 20px;">Detection Webpage</a>
     </div>
 
     <!-- RIGHT PANEL / STAGE -->
-    <div class="panel stage">
+    <div class="panel stage" style="max-height: 95vh;">
       <div class="stage-top">
         <div class="subtle">Tool: <b id="toolName">Polygon</b></div>
         <div class="player" id="player" style="margin-left:16px;">
