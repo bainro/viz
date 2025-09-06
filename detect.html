@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Detection Tuner – Color Threshold</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://code.jquery.com/jquery-3.7.1.min.js" crossorigin="anonymous"></script>
+<style>
+  :root{--bg:#0b0f14;--panel:#121820;--muted:#2b3542;--text:#e6eef8;--accent:#7dd3fc;--good:#34d399;--warn:#fbbf24;--danger:#f87171;--shadow:0 10px 30px rgba(0,0,0,.35)}
+  *{box-sizing:border-box} html,body{height:100%}
+  body{margin:0;background:linear-gradient(180deg,#0a0e13,#0c1219 50%,#0a0e13);color:var(--text);font:14px/1.4 Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  .app{display:grid;grid-template-columns:320px 1fr;gap:16px;padding:16px;height:100%}
+  .panel{background:var(--panel);border:1px solid var(--muted);border-radius:14px;box-shadow:var(--shadow)}
+  .left{display:flex;flex-direction:column;padding:14px}
+  .title{font-weight:700;font-size:16px;letter-spacing:.2px;margin-bottom:10px}
+  .subtle{color:#b6c2d1;font-size:12px}
+  .row{display:flex;gap:8px;align-items:center;margin:8px 0} .row .grow{flex:1}
+  .btn{padding:9px 10px;border-radius:10px;border:1px solid var(--muted);background:#0f151d;color:var(--text);cursor:pointer;text-align:center;font-weight:600;transition:.15s ease}
+  .btn:hover{border-color:#3b4656;transform:translateY(-1px)}
+  input[type="text"],input[type="file"]{width:100%;padding:9px 10px;border-radius:10px;border:1px solid var(--muted);background:#0f151d;color:var(--text)}
+  input[type=range]{width:100%}
+  .divider{height:1px;background:var(--muted);margin:12px 0}
+  .list{max-height:28vh;overflow:auto;border:1px solid var(--muted);border-radius:10px;padding:6px}
+  .item{padding:6px 8px;border-radius:8px;cursor:pointer}
+  .item.active{background:#0e1520;border:1px solid #334155}
+  .stage{position:relative;display:flex;flex-direction:column}
+  .stage-top{display:flex;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--muted)}
+  .canvas-wrap{position:relative;flex:1;overflow:hidden;border-radius:14px}
+  video{display:block;width:100%;height:100%;background:#0c1218;object-fit:contain;border-bottom-left-radius:14px;border-bottom-right-radius:14px}
+  .overlay{position:absolute;top:10px;left:10px;background:#0c1218cc;border:1px solid var(--muted);border-radius:10px;padding:6px 10px;font-size:12px;color:#cfe2ff}
+  .footer{padding:10px 12px;border-top:1px solid var(--muted);color:#9fb0c7;font-size:12px}
+  .hidden{display:none}
+  #spin span{display:inline-block;opacity:.2;animation:blink 1.4s infinite}
+  #spin .d2{animation-delay:.2s} #spin .d3{animation-delay:.4s}
+  #detDot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: red;
+  box-shadow: 0 0 6px rgba(255,0,0,0.8);
+  display: none; /* hidden by default */
+}
+  @keyframes blink{0%,80%,100%{opacity:.2}40%{opacity:1}}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- LEFT -->
+  <div class="panel left">
+    <div class="title">Detection Tuner <span class="subtle">(Color threshold)</span></div>
+    <div class="subtle">1) Upload ROI videos. 2) Tune thresholds. 3) Preview or Batch.</div>
+
+    <div class="row" style="margin-top:10px;">
+      <input id="vidPicker" type="file" accept="video/*" multiple />
+    </div>
+
+    <div class="subtle" style="margin-top:6px;">Uploaded videos</div>
+    <div id="vidList" class="list"></div>
+
+    <div class="divider"></div>
+    <div class="subtle">Params</div>
+
+    <div class="row"><span style="width:56px;">V_low</span><input id="vLow" type="range" min="0" max="255" value="0"><input id="vLowN" type="text" value="0" style="width:56px;"></div>
+    <div class="row"><span style="width:56px;">V_high</span><input id="vHigh" type="range" min="0" max="255" value="80"><input id="vHighN" type="text" value="80" style="width:56px;"></div>
+    <div class="row"><span style="width:56px;">Min %</span><input id="minFrac" type="range" min="0" max="50" step="0.5" value="5"><input id="minFracN" type="text" value="5" style="width:56px;"></div>
+
+    <div class="row">
+      <button class="btn" id="importParams">Import</button>
+      <input id="paramFile" type="file" accept="application/json" class="hidden"/>
+      <button class="btn" id="exportParams">Export</button>
+    </div>
+
+    <div class="divider"></div>
+    <div class="row">
+      <button class="btn good grow" id="runPreview">Run Preview (selected)</button>
+    </div>
+    <div class="row">
+      <button class="btn good grow" id="runBatch">Run Batch (all)</button>
+    </div>
+    <div id="spin" class="subtle hidden" style="margin-top:8px;"><span class="d1">•</span><span class="d2">•</span><span class="d3">•</span> Processing…</div>
+
+    <div class="divider"></div>
+    <div class="subtle">Jobs</div>
+    <div id="jobs" class="subtle" style="overflow: scroll;">None yet.</div>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="panel stage"  style="max-height: 95vh;">
+    <div class="stage-top">
+      <div class="subtle">Preview: pick a video from the list</div>
+    </div>
+    <div class="canvas-wrap">
+        <canvas id="maskOverlay" style="
+  position:absolute;top:0;left:0;width:100%;height:100%;
+  pointer-events:none;mix-blend-mode:screen;object-fit: contain;"></canvas>
+      <video id="video" preload="metadata" controls></video>
+      <div id="overlay" class="overlay" style="display:none;">Dark fraction: <b id="fracLbl">0%</b></div>
+    </div>
+    <!-- 🔴 detection indicator -->
+  <div id="detDot"></div>
+    <div class="footer">
+      Dark pixels = pixels with HSV Value in [V_low, V_high]. Detection occurs when Dark% ≥ Min%.
+    </div>
+  </div>
+</div>
+
+<script>
+$(function(){
+  const $video = $('#video')[0];
+  const $vidList = $('#vidList');
+  const $jobs = $('#jobs');
+  const $spin = $('#spin');
+  const uploads = []; // {name, localURL, serverPath, selected}
+
+  // param state
+  function getParams(){
+    const vlow = +$('#vLow').val();
+    const vhigh = +$('#vHigh').val();
+    const minp = +$('#minFrac').val();
+    return { v_low: vlow, v_high: vhigh, min_frac: minp/100 };
+  }
+  function setParams(p){
+    $('#vLow').val(p.v_low); $('#vLowN').val(p.v_low);
+    $('#vHigh').val(p.v_high); $('#vHighN').val(p.v_high);
+    const pct = Math.round((p.min_frac||0)*1000)/10;
+    $('#minFrac').val(pct); $('#minFracN').val(pct);
+  }
+  $('#vLow').on('input', e=> $('#vLowN').val(e.target.value));
+  $('#vHigh').on('input', e=> $('#vHighN').val(e.target.value));
+  $('#minFrac').on('input', e=> $('#minFracN').val(e.target.value));
+  $('#vLowN').on('change', e=> $('#vLow').val(e.target.value));
+  $('#vHighN').on('change', e=> $('#vHigh').val(e.target.value));
+  $('#minFracN').on('change', e=> $('#minFrac').val(e.target.value));
+
+  // upload helper (reuse your /upload-video)
+  async function uploadVideo(file){
+    const fd = new FormData();
+    fd.append('video', file);
+    const res = await fetch('/upload-video', { method:'POST', body: fd });
+    if(!res.ok) throw new Error(await res.text());
+    const j = await res.json();
+    return j.video_path;
+  }
+
+  // build list UI
+  function refreshList(){
+    $vidList.empty();
+    uploads.forEach((u, idx)=>{
+      const div = $(`<div class="item ${u.selected?'active':''}" data-idx="${idx}">${u.name}${u.serverPath?'':' (uploading...)'}</div>`);
+      $vidList.append(div);
+    });
+    if(uploads.length===0) $vidList.append($('<div class="subtle">No videos.</div>'));
+  }
+
+  $('#vidPicker').on('change', async (e)=>{
+  const files = Array.from(e.target.files||[]);
+  for(const f of files){
+    const localURL = URL.createObjectURL(f);
+    const rec = {name:f.name, localURL, serverPath:null, selected:false};
+    uploads.push(rec); 
+    refreshList();
+
+    try{
+      rec.serverPath = await uploadVideo(f);
+    }catch(err){
+      alert('Upload failed: '+err.message);
+    }finally{
+      refreshList();
+    }
+  }
+
+  // 👇 auto-select first video if none selected
+  if (uploads.length > 0 && !uploads.some(u=>u.selected)) {
+    uploads.forEach(u=>u.selected=false);
+    uploads[0].selected = true;
+    refreshList();
+    $video.src = uploads[0].localURL;
+    $video.load();
+  }
+});
+
+  // select for preview
+  $vidList.on('click', '.item', function(){
+    const idx = +$(this).data('idx');
+    uploads.forEach(u=>u.selected=false);
+    if(uploads[idx]) uploads[idx].selected = true;
+    refreshList();
+    if(uploads[idx]?.localURL){
+      $video.src = uploads[idx].localURL; $video.load();
+    }
+  });
+
+  function setDetection(active){
+  $('#detDot').css('display', active ? 'block' : 'none');
+}
+
+  // live dark fraction on current frame (HSV Value ∈ [v_low, v_high])
+  const $overlay = $('#overlay'), $fracLbl = $('#fracLbl');
+  function rgbToV(r,g,b){ return Math.max(r,g,b); } // 0..255 like OpenCV's V
+  function updateFraction(){
+    if($video.videoWidth===0) return;
+    const c = document.createElement('canvas');
+    c.width = $video.videoWidth; c.height = $video.videoHeight;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage($video,0,0);
+    const img = ctx.getImageData(0,0,c.width,c.height).data;
+    const {v_low, v_high, min_frac} = getParams();
+    let cnt=0, tot=img.length/4;
+    for(let i=0;i<img.length;i+=4){
+      const v = rgbToV(img[i], img[i+1], img[i+2]);
+      if(v>=v_low && v<=v_high) cnt++;
+    }
+    const frac = cnt/tot;
+    $fracLbl.text((frac*100).toFixed(1)+'%');
+    $overlay.show();
+    setDetection(frac >= getParams().min_frac);
+  }
+  $video.addEventListener('timeupdate', updateFraction);
+  $('#vLow,#vHigh,#minFrac').on('input', updateFraction);
+
+  // import/export params
+  $('#importParams').on('click', ()=> $('#paramFile').trigger('click'));
+  $('#paramFile').on('change', e=>{
+    const f=e.target.files[0]; if(!f) return;
+    const fr=new FileReader();
+    fr.onload=()=>{ try{ const p=JSON.parse(fr.result); setParams(p);}catch(err){alert('Bad JSON');} };
+    fr.readAsText(f);
+  });
+  $('#exportParams').on('click', ()=>{
+    const blob = new Blob([JSON.stringify(getParams(), null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download='detect_params.json'; a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  // run helper
+  async function runDetect(serverPaths){
+    const payload = { videos: serverPaths, params: getParams() };
+    $spin.removeClass('hidden');
+    try{
+      const res = await fetch('/detect-color', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(payload)
+      });
+      if(!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      if($jobs.text().trim()==='None yet.') $jobs.empty();
+      $jobs.append(`<div>Saved in: <b>${data.out_dir}</b></div>`);
+    }catch(err){
+      alert('Detect failed: '+err.message);
+    }finally{
+      $spin.addClass('hidden');
+    }
+  }
+
+  // preview (selected only)
+  $('#runPreview').on('click', async ()=>{
+    const sel = uploads.find(u=>u.selected && u.serverPath);
+    if(!sel){ alert('Select a video first.'); return; }
+    await runDetect([sel.serverPath]);
+  });
+
+  // batch (all uploaded)
+  $('#runBatch').on('click', async ()=>{
+    const paths = uploads.filter(u=>u.serverPath).map(u=>u.serverPath);
+    if(paths.length===0){ alert('Upload at least one video.'); return; }
+    await runDetect(paths);
+  });
+
+  const maskCanvas = document.getElementById('maskOverlay');
+const maskCtx = maskCanvas.getContext('2d', { willReadFrequently:true });
+
+function updateOverlay(){
+  if($video.videoWidth===0) return;
+  maskCanvas.width = $video.videoWidth;
+  maskCanvas.height = $video.videoHeight;
+
+  const tmp = document.createElement('canvas');
+  tmp.width = $video.videoWidth;
+  tmp.height = $video.videoHeight;
+  const tctx = tmp.getContext('2d');
+  tctx.drawImage($video,0,0);
+  const img = tctx.getImageData(0,0,tmp.width,tmp.height);
+  const data = img.data;
+
+  const {v_low,v_high} = getParams();
+  let cnt=0, tot=data.length/4;
+
+  const overlayImg = maskCtx.createImageData(tmp.width,tmp.height);
+  const odata = overlayImg.data;
+
+  for(let i=0;i<data.length;i+=4){
+    const v = Math.max(data[i], data[i+1], data[i+2]);
+    const inRange = (v>=v_low && v<=v_high);
+    if(inRange){
+      cnt++;
+      // semi-transparent cyan
+      odata[i]   = 0;   // R
+        odata[i+1] = 255; // G
+        odata[i+2] = 255; // B
+        odata[i+3] = 100;
+    }
+  }
+
+  maskCtx.putImageData(overlayImg,0,0);
+
+  const frac = cnt/tot;
+  $fracLbl.text((frac*100).toFixed(1)+'%');
+  $overlay.show();
+}
+
+// hook into events
+$video.addEventListener('timeupdate', updateOverlay);
+$('#vLow,#vHigh,#minFrac').on('input', updateOverlay);
+
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,879 @@
+<!--
+Dual‑Cam Recorder + ROI + DLC Overlay
+- Single-page HTML+JS app for: recording two webcams, ROI drawing, DLC overlay + CSV export
+- Minimal Flask backend stub to accept uploads, track job status, and simulate DLC output
+
+For webcam access, serve over http://localhost or use a simple static server (e.g., `python -m http.server 8080`).
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dual‑Cam Recorder • ROI • DLC Overlay</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --bg:#0b0f14; --panel:#121820; --muted:#2b3542; --text:#e6eef8; --accent:#7dd3fc;
+      --good:#34d399; --warn:#fbbf24; --danger:#f87171; --line:#1f2937; --shadow:0 10px 30px rgba(0,0,0,.35);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:linear-gradient(180deg,#0a0e13,#0c1219 50%,#0a0e13);color:var(--text);font:14px/1.4 Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+    .app{display:grid;grid-template-columns:360px 1fr;gap:16px;padding:16px;height:100%}
+    .panel{background:var(--panel);border:1px solid var(--muted);border-radius:14px;box-shadow:var(--shadow)}
+    .left{display:flex;flex-direction:column;padding:14px;overflow:auto}
+    .title{font-weight:700;font-size:16px;letter-spacing:.2px;margin:10px 0}
+    .subtle{color:#b6c2d1;font-size:12px}
+    .toolbar{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0 12px}
+    .btn{padding:9px 10px;border-radius:10px;border:1px solid var(--muted);background:#0f151d;color:var(--text);cursor:pointer;text-align:center;font-weight:600;transition:.15s ease}
+    .btn:hover{border-color:#3b4656;transform:translateY(-1px)}
+    .btn.active{border-color:var(--accent);box-shadow:0 0 0 1px inset var(--accent)}
+    .btn.good{border-color:var(--good)} .btn.warn{border-color:var(--warn)} .btn.danger{border-color:var(--danger)}
+    .row{display:flex;gap:8px;align-items:center;margin:8px 0} .row .grow{flex:1}
+    input[type="text"],input[type="file"],select,input[type=number]{width:100%;padding:9px 10px;border-radius:10px;border:1px solid var(--muted);background:#0f151d;color:var(--text)}
+    .divider{height:1px;background:var(--muted);margin:12px 0}
+    .list{overflow:auto;max-height:30vh;display:flex;flex-direction:column;gap:8px}
+    .item{display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:center;padding:8px;border:1px solid var(--muted);border-radius:10px;background:#0f151d}
+    .item .swatch{width:18px;height:18px;border-radius:4px;border:1px solid #0007}
+    .item .label{font-weight:600} .item .meta{font-size:11px;color:#9fb0c7}
+    .chip{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:999px;border:1px solid var(--muted);background:#0e1520}
+    .kbd{font-family:ui-monospace,Menlo,monospace;border:1px solid var(--muted);background:#0b1118;padding:2px 6px;border-radius:6px;font-size:12px}
+    .footer{padding:10px 12px;border-top:1px solid var(--muted);color:#9fb0c7;font-size:12px;display:flex;gap:12px;align-items:center}
+    .hidden{display:none}
+    .disabled{opacity:.5;pointer-events:none}
+
+    /* Stage */
+    .stage{position:relative;display:flex;flex-direction:column;min-height:0}
+    .stage-top{display:flex;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--muted)}
+    .hint{margin-left:auto;color:#9fb0c7;font-size:12px}
+    .stage-body{position:relative;flex:1;overflow:hidden;border-radius:14px}
+    .backdrop{position:absolute;inset:0;display:grid;place-items:center;background:radial-gradient(1200px 600px at 50% 10%,#121a24,#0d141d)}
+    .canvas-wrap{position:absolute;inset:0}
+    canvas{display:block;width:100%;height:100%;background:transparent;z-index:25;position:relative;}
+    #video{position: absolute;top: 0;}
+    .overlay{position:absolute;top:10px;left:10px;background:#0c1218cc;border:1px solid var(--muted);border-radius:10px;padding:6px 10px;font-size:12px;color:#cfe2ff}
+
+    /* Recorder view */
+    .recorder{position:absolute;inset:0;padding:10px;display:block;z-index:5;background:#121820;}
+
+    .rec-grid {
+  display: grid;
+  grid-template-columns: 1fr;   /* 1 column (stacked vertically) */
+  grid-auto-rows: 1fr;          /* 👈 each row gets equal height */
+  gap: 10px;
+  height: 100%;                 /* parent height defines total space */
+}
+
+.rec-cell {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #0b1115;
+  border: 1px solid var(--muted);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.rec-cell video {
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+
+
+
+    .rec-badge{position:absolute;top:10px;left:10px;padding:4px 8px;border-radius:999px;border:1px solid var(--muted);background:#0f151d}
+    .timer{position:absolute;bottom:10px;right:10px;padding:6px 10px;border-radius:8px;border:1px solid var(--muted);background:#0f151d;font-variant-numeric:tabular-nums}
+
+    .player{display:flex;gap:8px;align-items:center}
+    .time{font-variant-numeric:tabular-nums}
+    input[type=range]{width:240px}
+
+    /* DLC controls */
+    .dlc-ctrls .pt{display:grid;grid-template-columns:18px 1fr auto;gap:8px;align-items:center;padding:6px;border:1px solid var(--muted);border-radius:10px;background:#0f151d}
+    .dlc-ctrls .pt .name{font-size:12px}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- LEFT PANEL -->
+    <div class="panel left">
+      <div class="title">Record Webcams Simultaneously</div>
+      <div class="subtle">Select cameras and start recording.</div>
+      <div class="row">
+    <label>Number of cameras</label>
+    <input id="numCams" type="number" min="1" max="8" value="2" />
+    </div>
+    <div id="camSelectors"></div>
+      <!--<div class="row"><label style="width:80px">Cam A</label><select id="cam1"></select></div>
+      <div class="row"><label style="width:80px">Cam B</label><select id="cam2"></select></div>-->
+      <!--
+      <div class="row">
+        <label style="width:80px">Length</label>
+        <input id="recMin" type="number" min="1" step="1" value="5" style="max-width:120px"/>
+        <button class="btn" id="minMinus">−1m</button>
+        <button class="btn" id="minPlus">+1m</button>
+      </div>
+      -->
+      <div class="row">
+        <button class="btn good grow" id="startRec">Start Recording</button>
+        <button class="btn warn" id="stopRec" disabled>Stop</button>
+      </div>
+      <div class="row subtle">Elapsed: <span id="elapsed">00:00</span></div>
+
+      <div class="divider"></div>
+
+      <!--
+      <div class="title">Jobs</div>
+      <div class="list" id="jobList"></div>
+
+      <div class="divider"></div>
+
+      <div class="title">ROI Tools</div>
+      <div class="subtle">Load a video (recorded or external), draw ROIs, then overlay DLC and export CSV.</div>
+
+      <div class="row" style="margin-top:6px;">
+        <input id="videoPicker" type="file" accept="video/*" />
+      </div>
+
+      <div class="toolbar">
+        <button class="btn active" id="toolPolygon" title="Polygon tool">Polygon</button>
+        <button class="btn" id="toolRect" title="Rectangle tool">Rectangle</button>
+        <button class="btn" id="toolSelect" title="Select tool">Select</button>
+      </div>
+
+      <div class="row">
+        <input id="roiLabel" type="text" placeholder="Label (auto if blank)" class="grow" />
+      </div>
+
+      <div class="row">
+        <button class="btn good grow" id="finishROI">Finish ROI</button>
+        <button class="btn warn" id="undoPoint">Undo</button>
+        <button class="btn" id="cancelROI">Cancel</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="row" style="justify-content:space-between;">
+        <div class="subtle">Defined ROIs</div>
+        <div class="subtle" id="roiCount">0</div>
+      </div>
+      <div class="list" id="roiList"></div>
+
+      <div class="row">
+        <button class="btn danger grow" id="deleteROI">Delete Selected</button>
+        <button class="btn" id="clearAll">Clear All</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="row">
+        <button class="btn grow" id="importJSON">Import ROIs</button>
+        <input id="importFile" type="file" accept="application/json" class="hidden" />
+        <button class="btn grow" id="exportJSON">Export ROIs</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="title">DLC Overlay Controls</div>
+      <div class="subtle">Adjust confidence per point and choose which ones to include in the averaged center.
+        <div class="row" style="margin-top:8px"><button class="btn" id="loadResult" disabled>Load DLC for Selected Job</button></div>
+      </div>
+      <div class="dlc-ctrls" id="dlcCtrls" style="margin-top:8px;display:flex;flex-direction:column;gap:8px"></div>
+      <div class="row">
+        <label><input type="checkbox" id="showPoints" checked> Show points</label>
+        <label><input type="checkbox" id="showCenter" checked> Show center</label>
+      </div>
+
+      <div class="row">
+        <button class="btn" id="genCSV" disabled>Generate CSV</button>
+        <label class="subtle" style="margin-left:8px"><input type="checkbox" id="collapseIntervals"> Collapse intervals</label>
+      </div>
+
+      <div class="divider"></div>
+      -->
+
+      <a href="./split.html" target="_blank" class="btn" style="margin-top: 20px;">Video Splitting Tool Webpage</a>
+      <a href="./roi.html" target="_blank" class="btn" style="margin-top: 20px;">ROI Annotator Tool Webpage</a>
+    </div>
+
+    <!-- RIGHT PANEL / STAGE -->
+    <div class="panel stage">
+      <!--
+      <div class="stage-top">
+        <div class="subtle">Mode: <b id="modeLabel">Annotate</b></div>
+        <div class="player" id="player" style="margin-left:16px;">
+          <button class="btn" id="playPause">Play</button>
+          <input id="seek" type="range" min="0" max="1" step="0.001" value="0" />
+          <span class="time" id="time">00:00 / 00:00</span>
+          <button class="btn" id="stepBack" title="-1/30s">◀︎</button>
+          <button class="btn" id="stepFwd" title="+1/30s">▶︎</button>
+        </div>
+        <div class="hint" id="hint">Load a video to begin</div>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button class="btn" id="toggleRecorder">Recorder View</button>
+          <a href="./roi.html" target="_blank" class="btn">Annotator View</a>
+        </div>
+      </div>
+      -->
+
+      <div class="stage-body" id="stageBody">
+        <!-- Recorder View (Two Cameras) -->
+        <div class="recorder" id="recorderView">
+          <div class="rec-grid">
+            <div class="rec-cell">
+              <video id="preview1" playsinline muted></video>
+              <div class="rec-badge">Cam A</div>
+              <div class="timer" id="timer1">00:00</div>
+            </div>
+            <div class="rec-cell">
+              <video id="preview2" playsinline muted></video>
+              <div class="rec-badge">Cam B</div>
+              <div class="timer" id="timer2">00:00</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Annotator View -->
+        <div class="canvas-wrap" id="canvasWrap">
+          <div class="backdrop" id="dropzone">
+            <div style="text-align:center">
+              <div style="font-weight:700;font-size:18px;margin-bottom:6px;">Drop a video here</div>
+              <div>or use the file picker on the left.</div>
+              <div style="opacity:.9;margin-top:10px;">MP4 / WebM / Ogg</div>
+            </div>
+          </div>
+          <canvas id="canvas" width="1280" height="720"></canvas>
+          <video id="video" preload="metadata" playsinline muted></video>
+          <div class="overlay" id="overlayInfo" style="display:none;"></div>
+        </div>
+      </div>
+
+      <!--
+      <div class="footer">
+        <span>Pause to draw ROIs. Click to add polygon points, double‑click or <span class="kbd">Enter</span> to finish. Drag to draw rectangles. Click an ROI in the list to select.</span>
+      </div>
+      -->
+    </div>
+  </div>
+
+<script>
+$(function(){
+  // ====== Global State ======
+  const API = 'http://127.0.0.1:5000'; // Flask stub origin
+
+  // Recording
+  let devs = { cams: [] };
+  let streams = [null, null];
+  let recorders = [null, null];
+  let chunks = [[], []];
+  let recStart = null; // Date.now()
+  let recTimer = null; // interval handle
+  let recTargetSec = 0;
+
+  // Jobs
+  let jobs = []; // {localId, serverId, name, cam, status, localUrl, duration, width, height}
+  let selectedJobLocalId = null;
+
+  // Annotator / ROI
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const wrap = $('#canvasWrap');
+  const dropzone = $('#dropzone');
+  const video = document.getElementById('video');
+  const $seek = $('#seek');
+  const $time = $('#time');
+  const $playPause = $('#playPause');
+  const MODES = { POLY:'polygon', RECT:'rect', SELECT:'select' };
+  let mode = MODES.POLY;
+  let mediaLoaded = false;
+  let rois = []; // {id,label,type,points:[{x,y}], color, visible:true}
+  let nextId = 1; let selectedId = null;
+  let draft = { active:false, type:MODES.POLY, points:[], rectStart:null, rectEnd:null };
+  const palette = ['#7dd3fc','#34d399','#fbbf24','#f472b6','#a78bfa','#60a5fa','#fb7185','#22d3ee','#a3e635','#f59e0b','#e879f9'];
+  const colorFor = i => palette[i % palette.length];
+
+  // DLC overlay state
+  let dlc = { loaded:false, fps:30, width:0, height:0, pointTypes:[], frames:[], thresholds:{}, enabled:{}, colors:{} };
+
+  // ====== Utility ======
+  const cap = s => s? s.charAt(0).toUpperCase()+s.slice(1) : '';
+  const hexToRgba = (hex,a)=>{ const c = hex.replace('#',''); const n = parseInt(c,16); const r=(n>>16)&255,g=(n>>8)&255,b=n&255; return `rgba(${r},${g},${b},${a})`; };
+  const formatTime = t => { if(!isFinite(t)) return '00:00'; const m=Math.floor(t/60).toString().padStart(2,'0'); const s=Math.floor(t%60).toString().padStart(2,'0'); return `${m}:${s}`; };
+  const nowStr = () => new Date().toISOString().replace(/[-:T]/g,'').slice(0,15);
+  const pointInPoly = (p, poly)=>{ let inside=false; for(let i=0,j=poly.length-1;i<poly.length;j=i++){ const xi=poly[i].x, yi=poly[i].y, xj=poly[j].x, yj=poly[j].y; const intersect = ((yi>p.y)!=(yj>p.y)) && (p.x < (xj - xi) * (p.y - yi) / (yj - yi + 1e-9) + xi); if(intersect) inside = !inside; } return inside; };
+
+  // ====== Recorder UI ======
+  const recView = $('#recorderView');
+  const $cam1 = $('#cam1');
+  const $cam2 = $('#cam2');
+  const $recMin = $('#recMin');
+  const $elapsed = $('#elapsed');
+  const $target = $('#target');
+
+  $('#minMinus').on('click', ()=>{ const v=Math.max(1, (+$recMin.val()||1)-1); $recMin.val(v); updateTarget(); });
+  $('#minPlus').on('click', ()=>{ const v=(+$recMin.val()||1)+1; $recMin.val(v); updateTarget(); });
+
+  function updateTarget(){ recTargetSec = (+$recMin.val()||1)*60; $('#target').text(formatTime(recTargetSec)); }
+  updateTarget();
+
+  async function ensureDeviceLabels(){
+    try{ await navigator.mediaDevices.getUserMedia({video:true,audio:false}); }catch(e){ console.warn('Permission needed for device labels', e); }
+  }
+
+  async function listCams(){
+    await ensureDeviceLabels();
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const vids = devices.filter(d=>d.kind==='videoinput');
+    devs.cams = vids;
+    const opts = vids.map((d,i)=>`<option value="${d.deviceId}">${d.label||('Camera '+(i+1))}</option>`).join('');
+    $cam1.html(opts); $cam2.html(opts);
+    if(vids[0]) $cam1.val(vids[0].deviceId);
+    if(vids[1]) $cam2.val(vids[1].deviceId);
+  }
+  listCams();
+
+  function buildCamSelectors(count) {
+  const $wrap = $('#camSelectors').empty();
+  for (let i=0; i<count; i++) {
+    $wrap.append(`
+      <div class="row">
+        <label style="width:80px">Cam ${i+1}</label>
+        <select class="camSel" data-idx="${i}"></select>
+      </div>
+    `);
+  }
+}
+
+function buildPreviewGrid(num) {
+  const grid = document.querySelector('.rec-grid');
+  grid.innerHTML = '';
+
+  // Decide number of columns
+  let cols;
+  if (num <= 2) cols = 1;
+  else if (num <= 4) cols = 2;
+  else if (num <= 9) cols = 3;
+  else cols = Math.ceil(Math.sqrt(num));
+
+  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+
+  for (let i = 0; i < num; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'rec-cell';
+    cell.innerHTML = `
+      <video id="preview${i}" playsinline muted></video>
+      <div class="rec-badge">Cam ${i+1}</div>
+      <div class="timer" id="timer${i}">00:00</div>
+    `;
+    grid.appendChild(cell);
+  }
+}
+
+
+function attachStream(videoEl, stream) {
+  videoEl.srcObject = stream;
+  return new Promise(resolve => {
+    videoEl.onloadedmetadata = () => {
+      videoEl.play().catch(err => console.warn("play() failed", err));
+      resolve();
+    };
+  });
+}
+
+function populateSelectors(count) {
+  const vids = devs.cams;
+  const opts = vids.map((d,i)=>
+    `<option value="${d.deviceId}">${d.label || 'Camera '+(i+1)}</option>`
+  );
+
+  $('.camSel').each(function(i){
+    $(this).html(opts.join(''));
+    // pick the i-th camera if it exists, otherwise fallback to the first
+    if (vids[i]) {
+      $(this).val(vids[i].deviceId);
+    } else if (vids[0]) {
+      $(this).val(vids[0].deviceId);
+    }
+    // trigger change so the preview updates immediately
+    $(this).trigger("change");
+  });
+}
+
+async function startPreview(){
+  const n = +$('#numCams').val();
+  streams = new Array(n);
+
+  const camIds = [];
+  $('.camSel').each(function(){ camIds.push($(this).val()); });
+
+  for (let i=0; i<n; i++){
+    streams[i] = await navigator.mediaDevices.getUserMedia({
+      video: {
+        deviceId: { exact: camIds[i] },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      },
+      audio: false
+    });
+
+    const videoEl = document.getElementById(`preview${i}`);
+    if (!videoEl) continue;
+    await attachStream(videoEl, streams[i]);
+  }
+
+  $('#startRec').prop('disabled', false); 
+  $('#stopRec').prop('disabled', true);
+}
+
+// Re-preview any time a cam selector changes
+$(document).on('change', '.camSel', async function(){
+  await startPreview();
+});
+
+
+$('#numCams').on('input', ()=>{
+  const n = +$('#numCams').val();
+  buildCamSelectors(n);
+  buildPreviewGrid(n);
+  populateSelectors(n);
+  //startPreview();
+});
+
+setTimeout(() => {
+  $('#numCams').val(2).trigger("input");
+}, 2000); 
+
+
+  function showRecorder(){ $('#modeLabel').text('Recorder'); recView.show(); $('#toggleAnnotator').prop('disabled', false); }
+  function showAnnotator(){ return True; }//$('#modeLabel').text('Annotate'); recView.hide(); }
+  $('#toggleRecorder').on('click', showRecorder);
+  $('#toggleAnnotator').on('click', showAnnotator);
+
+async function startRecording(){
+  const n = +$('#numCams').val();
+  recorders = new Array(n);
+  chunks = new Array(n).fill(null).map(()=>[]);
+
+  // ask server for a session
+  const res = await fetch("/start-recording", { method: "POST" });
+  const { session_id } = await res.json();
+  window.sessionId = session_id;
+
+  for (let i=0;i<n;i++){
+    const stream = streams[i];
+    const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
+                   ? 'video/webm;codecs=vp9,opus' 
+                   : 'video/webm';
+    recorders[i] = new MediaRecorder(stream, { mimeType: mime });
+    recorders[i].ondataavailable = e => {
+      if (e.data && e.data.size > 0) {
+        const formData = new FormData();
+        formData.append("chunk", e.data, `part-${Date.now()}.webm`);
+        formData.append("streamId", window.sessionId);
+        formData.append("camId", i);
+        fetch("/upload-chunk", { method: "POST", body: formData });
+      }
+    };
+    recorders[i].start(1000);
+  }
+
+  // timer
+  recStart = Date.now();
+  recTimer = setInterval(()=>{
+    const sec = Math.floor((Date.now()-recStart)/1000);
+    $elapsed.text(formatTime(sec));
+    for(let i=0;i<n;i++) $(`#timer${i}`).text(formatTime(sec));
+  }, 500);
+
+  $('#startRec').prop('disabled', true);
+  $('#stopRec').prop('disabled', false);
+}
+
+
+  async function stopRecording(){
+    recorders.forEach(r=>{ try{ r && r.state!=='inactive' && r.stop(); }catch(e){} });
+    streams.forEach(s=>{ try{ s && s.getTracks().forEach(t=>t.stop()); }catch(e){} });
+    clearInterval(recTimer); $('#stopRec').prop('disabled', true); $('#startRec').prop('disabled', false);
+
+    await fetch("/stop-recording", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: window.sessionId })
+    });
+
+    // Build blobs
+    const blobs = [ new Blob(chunks[0], {type: chunks[0][0]?.type || 'video/webm'}), new Blob(chunks[1], {type: chunks[1][0]?.type || 'video/webm'}) ];
+    const durSec = Math.floor((Date.now()-recStart)/1000);
+
+    // Create local job entries and upload
+    for(let i=0;i<2;i++){
+      if(blobs[i].size===0) continue;
+      const name = `${nowStr()}_cam${i+1}.webm`;
+      const localUrl = URL.createObjectURL(blobs[i]);
+      const localId = Math.random().toString(36).slice(2);
+      //const job = { localId, serverId:null, name, cam:(i===0?'A':'B'), status:'queued', localUrl, duration:durSec, width: streams[i].getVideoTracks()[0].getSettings().width || 1280, height: streams[i].getVideoTracks()[0].getSettings().height || 720 };
+      //jobs.unshift(job);
+      //addJobItem(job);
+      //uploadJob(job, blobs[i]).catch(err=>{ console.error(err); updateJob(job.localId,{status:'error'}); });
+    }
+  }
+
+  async function uploadJob(job, blob){
+    const fd = new FormData();
+    fd.append('file', blob, job.name);
+    fd.append('name', job.name);
+    fd.append('duration', job.duration);
+    fd.append('width', job.width);
+    fd.append('height', job.height);
+    const res = await fetch(`${API}/upload`, {method:'POST', body:fd});
+    if(!res.ok) throw new Error('upload failed');
+    //const json = await res.json();
+    //updateJob(job.localId, {serverId: json.job_id, status:'queued'});
+    //pollJobsOnce();
+  }
+
+  function statusChip(s){
+    const map = { queued:['#fbbf24','Queued'], processing:['#60a5fa','Processing'], ready:['#34d399','Ready'], error:['#f87171','Error'] };
+    const [c,l] = map[s] || ['#9fb0c7', s];
+    return `<span class="chip" style="border-color:${c};color:${c}">${l}</span>`;
+  }
+
+  function addJobItem(job){
+    const li = $(`<div class="item" data-local="${job.localId}">
+      <div class="swatch" style="background:${job.cam==='A'?'#7dd3fc':'#a78bfa'}"></div>
+      <div>
+        <div class="label">${job.name}</div>
+        <div class="meta">Cam ${job.cam} • ${formatTime(job.duration)} • ${statusChip(job.status)}</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn useLocal">Use in Annotator</button>
+        <button class="btn openRes" disabled>Open DLC</button>
+      </div>
+    </div>`);
+    $('#jobList').prepend(li);
+  }
+
+  function updateJob(localId, patch){
+    const j = jobs.find(x=>x.localId===localId); if(!j) return; Object.assign(j, patch);
+    const li = $(`#jobList .item[data-local="${localId}"]`);
+    if(li.length){
+      li.find('.meta').html(`Cam ${j.cam} • ${formatTime(j.duration)} • ${statusChip(j.status)}`);
+      if(j.status==='ready') li.find('.openRes').prop('disabled', false);
+    }
+  }
+
+  async function pollJobsOnce(){
+    try{
+      const res = await fetch(`${API}/jobs`);
+      if(!res.ok) return;
+      const json = await res.json(); // {jobs:[{job_id,status,name}]}
+      for(const sj of json.jobs){
+        const matching = jobs.find(j=>j.serverId===sj.job_id);
+        if(matching) updateJob(matching.localId, {status:sj.status});
+      }
+    }catch(e){ console.warn('poll jobs failed', e); }
+  }
+  //setInterval(pollJobsOnce, 3000);
+
+  $('#jobList').on('click', '.useLocal', function(){
+    const localId = $(this).closest('.item').data('local');
+    const job = jobs.find(j=>j.localId===localId); if(!job) return;
+    loadVideoURL(job.localUrl);
+    selectedJobLocalId = localId;
+    $('#loadResult').prop('disabled', !job.serverId);
+    showAnnotator();
+  });
+
+  $('#jobList').on('click', '.openRes', async function(){
+    const localId = $(this).closest('.item').data('local');
+    const job = jobs.find(j=>j.localId===localId); if(!job) return;
+    selectedJobLocalId = localId;
+    loadVideoURL(job.localUrl);
+    await loadDLC(job.serverId);
+    showAnnotator();
+  });
+
+  //$('#startRec').on('click', startRecording);
+  //$('#stopRec').on('click', stopRecording);
+
+  // ====== Annotator base (ROI + player) ======
+  function canvasSizeToMedia(){ if(!mediaLoaded) return; const w = wrap.width(); const h = wrap.height(); canvas.width = w; canvas.height = h; }
+  function fitRect(){ const cw=canvas.width, ch=canvas.height, iw=video.videoWidth, ih=video.videoHeight; const scale=Math.min(cw/iw, ch/ih); const dw=iw*scale, dh=ih*scale; const dx=(cw-dw)/2, dy=(ch-dh)/2; return {scale,dx,dy}; }
+  const toCanvas = p => { const f=fitRect(); return { x: Math.round(f.dx + p.x*f.scale), y: Math.round(f.dy + p.y*f.scale) }; };
+  const toImage = p => { const f=fitRect(); return { x: (p.x - f.dx)/f.scale, y: (p.y - f.dy)/f.scale }; };
+  const rectToPoly = (a,b)=>[ {x:Math.min(a.x,b.x),y:Math.min(a.y,b.y)}, {x:Math.max(a.x,b.x),y:Math.min(a.y,b.y)}, {x:Math.max(a.x,b.x),y:Math.max(a.y,b.y)}, {x:Math.min(a.x,b.x),y:Math.max(a.y,b.y)} ];
+
+  let hover=null;
+  function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    if(!mediaLoaded) return;
+    const f=fitRect();
+    ctx.drawImage(video, f.dx, f.dy, video.videoWidth*f.scale, video.videoHeight*f.scale);
+
+    // DLC overlay
+    if(dlc.loaded){
+      const frameIdx = Math.max(0, Math.min(dlc.frames.length-1, Math.floor((video.currentTime||0)*dlc.fps)));
+      const fr = dlc.frames[frameIdx];
+      if(fr){
+        const ptsCanvas = [];
+        for(const name of dlc.pointTypes){
+          const [x,y,lik] = fr.points[name] || [NaN,NaN,0];
+          const thr = dlc.thresholds[name] ?? 0.5; const ena = dlc.enabled[name] !== false;
+          if(!isFinite(x)||!isFinite(y)) continue;
+          const pC = toCanvas({x,y});
+          if($('#showPoints')[0].checked){
+            ctx.save();
+            ctx.fillStyle = hexToRgba(dlc.colors[name]||'#fff', lik>=thr?0.9:0.25);
+            ctx.strokeStyle = dlc.colors[name]||'#fff';
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(pC.x, pC.y, 5, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+            ctx.restore();
+          }
+          if(ena && lik>=thr) ptsCanvas.push(pC);
+        }
+        if($('#showCenter')[0].checked && ptsCanvas.length>0){
+          const cx = Math.round(ptsCanvas.reduce((s,p)=>s+p.x,0)/ptsCanvas.length);
+          const cy = Math.round(ptsCanvas.reduce((s,p)=>s+p.y,0)/ptsCanvas.length);
+          ctx.save();
+          ctx.fillStyle = '#ffffff'; ctx.strokeStyle='#000'; ctx.lineWidth=2;
+          ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+          ctx.restore();
+        }
+      }
+    }
+
+    // ROIs
+    for(const roi of rois){ if(roi.visible===false) continue; ctx.save(); ctx.lineWidth=3; ctx.strokeStyle=roi.color; ctx.fillStyle=hexToRgba(roi.color, 0.18); drawPoly(roi.points.map(p=>toCanvas(p)), true); if(roi.id===selectedId){ ctx.strokeStyle='#fff'; ctx.setLineDash([6,4]); drawPoly(roi.points.map(p=>toCanvas(p)), false); ctx.setLineDash([]);} const c=centroid(roi.points.map(p=>toCanvas(p))); ctx.font='600 14px Inter, sans-serif'; ctx.lineWidth=3; ctx.strokeStyle='#000'; ctx.strokeText(roi.label, c.x+6, c.y-6); ctx.fillStyle='#fff'; ctx.fillText(roi.label, c.x+6, c.y-6); ctx.restore(); }
+
+    // Draft
+    if(draft.active){ ctx.save(); ctx.lineWidth=2; ctx.strokeStyle='#9fb0c7'; ctx.fillStyle='rgba(158,197,254,.08)'; if(draft.type===MODES.POLY){ const pts=draft.points.map(p=>toCanvas(p)); drawPoly(pts,false); for(const p of pts) drawHandle(p.x,p.y); if(hover){ const last=pts[pts.length-1]; if(last){ ctx.beginPath(); ctx.moveTo(last.x,last.y); ctx.lineTo(hover.x,hover.y); ctx.stroke(); } } if(pts.length>0) drawSnap(pts[0].x, pts[0].y); } else if(draft.type===MODES.RECT && draft.rectStart && draft.rectEnd){ const a=toCanvas(draft.rectStart), b=toCanvas(draft.rectEnd); const poly=rectToPoly(a,b); drawPoly(poly, true);} ctx.restore(); }
+
+    $('#overlayInfo').html(mediaLoaded? metaText() : '').toggle(mediaLoaded);
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+
+  function drawPoly(pts, fill){ if(pts.length<2) return; ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y); if(fill && pts.length>=3){ ctx.closePath(); ctx.fill(); } ctx.stroke(); }
+  function drawHandle(x,y){ ctx.save(); ctx.fillStyle='#e6eef8'; ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2); ctx.fill(); ctx.restore(); }
+  function drawSnap(x,y){ ctx.save(); ctx.strokeStyle='#7dd3fc'; ctx.setLineDash([3,3]); ctx.beginPath(); ctx.arc(x,y,8,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]); ctx.restore(); }
+  function centroid(pts){ const n=pts.length; if(!n) return {x:0,y:0}; let x=0,y=0; for(const p of pts){x+=p.x;y+=p.y;} return {x:x/n,y:y/n}; }
+  function metaText(){ return `<b>${video.videoWidth}×${video.videoHeight}</b> | ROIs: <b>${rois.length}</b> | Tool: <b>${cap(mode)}</b>`; }
+
+  // Media loading
+  function loadVideoURL(url){ video.src = url; video.load(); $("#toggleAnnotator").click(); }
+  function loadVideoFile(file){ const url = URL.createObjectURL(file); loadVideoURL(url); }
+  $('#videoPicker').on('change', e=>{ const f=e.target.files[0]; if(f) loadVideoFile(f); });
+  dropzone.on('dragover', e=>{ e.preventDefault(); dropzone.css('opacity','.9'); });
+  dropzone.on('dragleave', e=>{ e.preventDefault(); dropzone.css('opacity','1'); });
+  dropzone.on('drop', e=>{ e.preventDefault(); dropzone.css('opacity','1'); const f=e.originalEvent.dataTransfer.files[0]; if(f) loadVideoFile(f); });
+
+  video.addEventListener('loadedmetadata', ()=>{
+    mediaLoaded = true; dropzone.hide(); canvasSizeToMedia();
+    $seek.attr({min:0, max: video.duration || 1, step: 0.001});
+    updateTimeUI(); $('#toggleAnnotator').prop('disabled', false);
+  });
+  video.addEventListener('timeupdate', updateTimeUI);
+  function updateTimeUI(){ $seek.val(video.currentTime || 0); $time.text(`${formatTime(video.currentTime||0)} / ${formatTime(video.duration||0)}`); }
+
+  // Player
+  function togglePlay(){ if(!mediaLoaded) return; if(video.paused){ video.play(); $playPause.text('Pause'); disableDrawing(true); } else { video.pause(); $playPause.text('Play'); disableDrawing(false); } }
+  function disableDrawing(dis){ const toggles = ['#toolPolygon','#toolRect','#finishROI','#undoPoint','#cancelROI']; toggles.forEach(sel=> $(sel).toggleClass('disabled', dis)); $('#hint').text(dis? 'Playing… pause to draw' : 'Paused. Draw ROIs.'); }
+  $playPause.on('click', togglePlay);
+  $('#stepBack').on('click', ()=>{ if(!mediaLoaded) return; video.pause(); $playPause.text('Play'); video.currentTime = Math.max(0, video.currentTime - 1/30); });
+  $('#stepFwd').on('click', ()=>{ if(!mediaLoaded) return; video.pause(); $playPause.text('Play'); video.currentTime = Math.min(video.duration, video.currentTime + 1/30); });
+  $seek.on('input', function(){ if(!mediaLoaded) return; video.currentTime = parseFloat(this.value); });
+  $(window).on('keydown', e=>{ if(e.key===' '){ e.preventDefault(); togglePlay(); } });
+
+  // ROI list UI
+  function refreshList(){ const list = $('#roiList').empty(); for(const roi of rois){ const item = $(`
+      <div class='item' data-id='${roi.id}'>
+        <div class='swatch' style='background:${roi.color}'></div>
+        <div>
+          <div class='label'>${escapeHtml(roi.label)}</div>
+          <div class='meta'>${roi.type} • ${roi.points.length} pts</div>
+        </div>
+        <div><button class='btn toggleVis' title='Toggle visibility'>${roi.visible===false? '🙈':'👁️'}</button></div>
+      </div>`); if(roi.id===selectedId) item.css('border-color', '#7dd3fc'); list.append(item);} $('#roiCount').text(rois.length); }
+  $('#roiList').on('click', '.item', function(){ selectedId = Number($(this).data('id')); refreshList(); });
+  $('#roiList').on('click', '.toggleVis', function(e){ e.stopPropagation(); const id = Number($(this).closest('.item').data('id')); const r=rois.find(x=>x.id===id); r.visible = !r.visible; refreshList(); });
+  function addROI(obj){ rois.push(obj); selectedId = obj.id; refreshList(); }
+  function autoLabel(){ return `ROI-${nextId}`; }
+  function getLabel(){ const v = $('#roiLabel').val().trim(); return v || autoLabel(); }
+
+  // Drawing
+  function onMouseMove(e){ if(!mediaLoaded) return; const rect = canvas.getBoundingClientRect(); const x=e.clientX-rect.left, y=e.clientY-rect.top; hover={x,y}; if(draft.active && draft.type===MODES.RECT && draft.rectStart){ draft.rectEnd = toImage(hover); } }
+  function onMouseDown(e){ console.log(123);if(!mediaLoaded || !video.paused) return; const pos = toImage(getMouse(e)); console.log(123333);if(mode===MODES.POLY){ console.log(666);if(!draft.active){ draft={active:true,type:MODES.POLY,points:[pos]}; } else { const first = draft.points[0]; const dist = Math.hypot(toCanvas(first).x - hover.x, toCanvas(first).y - hover.y); console.log(1111123); if(draft.points.length>=3 && dist<10){ finishPolygon(); return; } draft.points.push(pos); } } else if(mode===MODES.RECT){ draft={active:true,type:MODES.RECT, rectStart:pos, rectEnd:pos}; } else if(mode===MODES.SELECT){ const hit = rois.find(r=> pointInPoly(pos, r.points)); if(hit){ selectedId = hit.id; refreshList(); } } }
+  function onMouseUp(e){ if(!mediaLoaded) return; if(draft.active && draft.type===MODES.RECT && draft.rectStart){ const a=draft.rectStart, b=draft.rectEnd; if(!a||!b) return cancelDraft(); const poly = rectToPoly(toCanvas(a), toCanvas(b)).map(p=>toImage(p)); finalizeROI({ type:'rect', points:poly }); } }
+  function onDblClick(e){ if(mode===MODES.POLY && draft.active) finishPolygon(); }
+  function finishPolygon(){ if(!draft.points || draft.points.length<3) return; finalizeROI({ type:'polygon', points:[...draft.points] }); }
+  function cancelDraft(){ draft={active:false,type:mode,points:[],rectStart:null,rectEnd:null}; }
+  function finalizeROI({type, points}){ const label = getLabel(); const roi = { id: nextId++, label, type, points: clampPoints(points), color: colorFor(rois.length), visible:true }; addROI(roi); $('#roiLabel').val(''); cancelDraft(); }
+  function clampPoints(pts){ return pts.map(p=>({ x: Math.max(0, Math.min((video.videoWidth||1)-1, p.x)), y: Math.max(0, Math.min((video.videoHeight||1)-1, p.y)) })); }
+  function getMouse(e){ const r=canvas.getBoundingClientRect(); return { x:e.clientX-r.left, y:e.clientY-r.top }; }
+
+  $('#toolPolygon').on('click', ()=> setMode(MODES.POLY));
+  $('#toolRect').on('click', ()=> setMode(MODES.RECT));
+  $('#toolSelect').on('click', ()=> setMode(MODES.SELECT));
+  function setMode(m){ mode = m; $('#modeLabel').text('Annotate'); $('#toolPolygon, #toolRect, #toolSelect').removeClass('active'); if(m===MODES.POLY) $('#toolPolygon').addClass('active'); if(m===MODES.RECT) $('#toolRect').addClass('active'); if(m===MODES.SELECT) $('#toolSelect').addClass('active'); $('#hint').text(m===MODES.POLY?'Polygon: click to add points, double‑click/Enter to finish':(m===MODES.RECT?'Rectangle: drag to draw, release to finish':'Select: click inside an ROI to select')); }
+
+  $('#finishROI').on('click', ()=> { if(mode===MODES.POLY && draft.active) finishPolygon(); });
+  $('#undoPoint').on('click', ()=> { if(draft.active && draft.type===MODES.POLY && draft.points.length>0){ draft.points.pop(); } });
+  $('#cancelROI').on('click', ()=> cancelDraft());
+  $('#deleteROI').on('click', ()=>{ if(selectedId==null) return; rois = rois.filter(r=>r.id!==selectedId); selectedId=null; refreshList(); });
+  $('#clearAll').on('click', ()=>{ rois=[]; selectedId=null; refreshList(); });
+
+  // Import / Export ROIs
+  $('#importJSON').on('click', ()=> $('#importFile').trigger('click'));
+  $('#importFile').on('change', (e)=>{ const f=e.target.files[0]; if(!f) return; const reader=new FileReader(); reader.onload=()=>{ try{ const data = JSON.parse(reader.result); if(!data.rois||!Array.isArray(data.rois)) throw new Error('Invalid JSON: missing rois[]'); rois = data.rois.map((r,i)=>({ id: r.id||i+1, label: r.label||`ROI-${i+1}`, type: r.type||'polygon', points: r.points.map(pt=>({x:pt[0]??pt.x, y:pt[1]??pt.y})), color: colorFor(i), visible:true })); nextId = Math.max(0, ...rois.map(r=>r.id))+1; selectedId = rois[0]?.id ?? null; refreshList(); }catch(err){ alert('Failed to import: '+err.message); } }; reader.readAsText(f); });
+  $('#exportJSON').on('click', ()=>{ if(!mediaLoaded){ alert('Load a video first.'); return; } const payload = { image_size: [video.videoWidth, video.videoHeight], source: '', rois: rois.map(r=>({ id:r.id, label:r.label, type:r.type, points: r.points.map(p=>[Math.round(p.x), Math.round(p.y)]) })) }; const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href=url; a.download='rois.json'; a.click(); URL.revokeObjectURL(url); });
+
+  // Canvas events & resize
+  canvas.addEventListener('mousemove', onMouseMove);
+  canvas.addEventListener('mousedown', onMouseDown);
+  canvas.addEventListener('mouseup', onMouseUp);
+  canvas.addEventListener('dblclick', onDblClick);
+  const resizeObserver = new ResizeObserver(()=>{ canvasSizeToMedia(); }); resizeObserver.observe(wrap[0]);
+
+  // ====== DLC integration ======
+  $('#loadResult').on('click', async ()=>{
+    const job = jobs.find(j=>j.localId===selectedJobLocalId);
+    if(!job||!job.serverId){ alert('Select a job with a serverId.'); return; }
+    await loadDLC(job.serverId);
+  });
+
+  async function loadDLC(serverId){
+    const res = await fetch(`${API}/result/${serverId}`);
+    if(!res.ok){ alert('Result not ready'); return; }
+    const data = await res.json();
+    dlc.loaded = true; dlc.fps = data.fps||30; dlc.width = data.width; dlc.height = data.height; dlc.pointTypes = data.point_types; dlc.frames = data.frames; dlc.thresholds = {}; dlc.enabled = {}; dlc.colors = {};
+    const cols = ['#ef4444','#22c55e','#3b82f6','#eab308','#a855f7','#14b8a6','#f97316','#06b6d4','#84cc16'];
+    dlc.pointTypes.forEach((p,i)=>{ dlc.thresholds[p]=0.5; dlc.enabled[p]=true; dlc.colors[p]=cols[i%cols.length]; });
+    buildDlcCtrls(); $('#genCSV').prop('disabled', false);
+  }
+
+  function buildDlcCtrls(){
+    const ctrls = $('#dlcCtrls').empty();
+    for(const name of dlc.pointTypes){
+      const row = $(`<div class="pt" data-name="${name}">
+        <div class="swatch" style="width:14px;height:14px;border-radius:3px;background:${dlc.colors[name]}"></div>
+        <div class="name">${name}</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <label class="subtle"><input type="checkbox" class="ena" checked> use</label>
+          <input type="range" class="thr" min="0" max="1" step="0.01" value="${dlc.thresholds[name].toFixed(2)}" style="width:140px">
+          <span class="subtle val">${dlc.thresholds[name].toFixed(2)}</span>
+        </div>
+      </div>`);
+      ctrls.append(row);
+    }
+  }
+
+  $('#dlcCtrls').on('input', '.thr', function(){
+    const name = $(this).closest('.pt').data('name');
+    const v = +$(this).val(); dlc.thresholds[name]=v; $(this).siblings('.val').text(v.toFixed(2));
+  });
+  $('#dlcCtrls').on('change', '.ena', function(){ const name = $(this).closest('.pt').data('name'); dlc.enabled[name] = this.checked; });
+
+  // CSV generation
+  $('#genCSV').on('click', ()=>{
+    if(!dlc.loaded){ alert('Load DLC first'); return; }
+    const collapse = $('#collapseIntervals')[0].checked;
+    const rows = [];
+    const fps = dlc.fps||30; const N = dlc.frames.length;
+    let lastROI = null; let segStart = null;
+
+    for(let i=0;i<N;i++){
+      const t = i/fps;
+      const c = centerForFrame(i);
+      if(!c) { if(collapse && lastROI){ // end segment
+          rows.push([segStart.toFixed(3), (i-1)/fps, lastROI]); lastROI=null; segStart=null; }
+        continue; }
+      // check ROIs (image-space)
+      const imgPt = {x:c.x, y:c.y};
+      let hit=null; for(const r of rois){ if(pointInPoly(imgPt, r.points)){ hit=r; break; } }
+      if(hit){
+        if(collapse){
+          if(lastROI===hit.label){ /* continue segment */ }
+          else{ if(lastROI){ rows.push([segStart.toFixed(3), (i-1)/fps, lastROI]); }
+                lastROI = hit.label; segStart = t; }
+        }else{
+          rows.push([t.toFixed(3), hit.label]);
+        }
+      } else {
+        if(collapse && lastROI){ rows.push([segStart.toFixed(3), (i-1)/fps, lastROI]); lastROI=null; segStart=null; }
+      }
+    }
+    if(collapse && lastROI){ rows.push([segStart.toFixed(3), (N-1)/fps, lastROI]); }
+
+    // to CSV
+    let csv = '';
+    if(collapse){ csv += 'start_sec,end_sec,roi\n'; rows.forEach(r=> csv += `${r[0]},${r[1].toFixed(3)},${r[2]}\n`); }
+    else { csv += 'time_sec,roi\n'; rows.forEach(r=> csv += `${r[0]},${r[1]}\n`); }
+
+    const blob = new Blob([csv], {type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download = collapse?'roi_intervals.csv':'roi_hits.csv'; a.click(); URL.revokeObjectURL(url);
+  });
+
+  function centerForFrame(i){
+    const fr = dlc.frames[i]; if(!fr) return null; const pts=[];
+    for(const name of dlc.pointTypes){
+      const arr = fr.points[name]; if(!arr) continue; const [x,y,lik] = arr; const thr=dlc.thresholds[name]??0.5; const ena=dlc.enabled[name]!==false; if(ena && lik>=thr && isFinite(x) && isFinite(y)) pts.push({x,y});
+    }
+    if(pts.length===0) return null;
+    const cx = pts.reduce((s,p)=>s+p.x,0)/pts.length; const cy = pts.reduce((s,p)=>s+p.y,0)/pts.length; return {x:cx,y:cy};
+  }
+
+  // ====== Jobs polling button ======
+  $('#loadResult').prop('disabled', true);
+
+  // ====== Recorder controls: hook up ======
+  $('#toggleRecorder').on('click', ()=> showRecorder());
+
+  // Expose
+  window._debug = {jobs, dlc};
+
+  // Event hooks
+  $('#startRec').on('click', startRecording);
+  $('#stopRec').on('click', stopRecording);
+
+  // Utils
+  function escapeHtml(str){ return String(str).replace(/[&<>"]/g, s => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[s])); }
+});
+</script>
+</body>
+</html>
+
+<!--
+
+How to run backend:
+1) Save the Flask stub below as server.py
+2) python3 -m venv .venv && source .venv/bin/activate
+3) pip install -r requirements.txt
+4) FLASK_APP=server.py flask run  (defaults to http://127.0.0.1:5000)
+
+# ----- server.py -----
+# Minimal Flask stub: accepts uploads, tracks jobs, simulates DLC outputs (JSON)
+# Run: pip install -r requirements.txt ; FLASK_APP=server.py flask run
+
+"""
+requirements.txt:
+Flask==3.0.2
+flask-cors==4.0.1
+numpy==1.26.4
+"""
+
+from flask import Flask, request, jsonify, send_file
+from flask_cors import CORS
+import os, threading, time, json, math, random
+
+app = Flask(__name__)
+CORS(app)
+
+UPLOAD_DIR
+-->

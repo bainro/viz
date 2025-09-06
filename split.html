@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Video Cutter – (Front-End)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --bg:#0b0f14; --panel:#121820; --muted:#2b3542; --text:#e6eef8; --accent:#7dd3fc;
+      --good:#34d399; --warn:#fbbf24; --danger:#f87171; --line:#1f2937; --shadow:0 10px 30px rgba(0,0,0,.35);
+    }
+    *{box-sizing:border-box} html,body{height:100%}
+    body{margin:0;background:linear-gradient(180deg,#0a0e13,#0c1219 50%,#0a0e13);color:var(--text);font:14px/1.4 Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+    .app{display:grid;grid-template-columns:400px 1fr;gap:16px;padding:16px;height:100%}
+    .panel{background:var(--panel);border:1px solid var(--muted);border-radius:14px;box-shadow:var(--shadow)}
+    .left{display:flex;flex-direction:column;padding:14px}
+    .title{font-weight:700;font-size:16px;letter-spacing:.2px;margin-bottom:10px}
+    .subtle{color:#b6c2d1;font-size:12px}
+    .row{display:flex;gap:8px;align-items:center;margin:8px 0} .row .grow{flex:1}
+    .btn{padding:9px 10px;border-radius:10px;border:1px solid var(--muted);background:#0f151d;color:var(--text);cursor:pointer;text-align:center;font-weight:600;transition:.15s ease}
+    .btn:hover{border-color:#3b4656;transform:translateY(-1px)}
+    .btn.good{border-color:var(--good)} .btn.warn{border-color:var(--warn)} .btn.danger{border-color:var(--danger)}
+    input[type="text"], input[type="file"]{width:100%;padding:9px 10px;border-radius:10px;border:1px solid var(--muted);background:#0f151d;color:var(--text)}
+    .divider{height:1px;background:var(--muted);margin:12px 0}
+    .seg-list{overflow:auto;min-height:150px;max-height:45vh;display:flex;flex-direction:column;gap:8px}
+    .seg-item{display:grid;grid-template-columns:1fr 1fr 80px auto;gap:8px;align-items:center;padding:8px;border:1px solid var(--muted);border-radius:10px;background:#0f151d}
+    .seg-item input{padding:6px 8px; max-width:70px;}
+    .icon-btn{border:none;background:transparent;color:#9fb0c7;cursor:pointer;font-weight:700;padding:6px 8px}
+    .icon-btn:hover{color:var(--text)}
+    .hint{margin-left:auto;color:#9fb0c7;font-size:12px}
+
+    .stage{position:relative;display:flex;flex-direction:column}
+    .stage-top{display:flex;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--muted)}
+    .player{display:flex;gap:8px;align-items:center}
+    .time{font-variant-numeric:tabular-nums}
+    input[type=range]{width:280px}
+    .canvas-wrap{position:relative;flex:1;overflow:hidden;border-radius:14px}
+    .backdrop{position:absolute;inset:0;display:grid;place-items:center;background:radial-gradient(1200px 600px at 50% 10%,#121a24,#0d141d);border-bottom-left-radius:14px;border-bottom-right-radius:14px}
+    .dropzone{border:2px dashed #304055;border-radius:12px;padding:18px 22px;color:#b6c2d1;text-align:center;max-width:560px}
+    .dropzone b{color:#e6eef8}
+    video{display:block;width:100%;height:100%;background:#0c1218;object-fit:contain;border-bottom-left-radius:14px;border-bottom-right-radius:14px}
+    .footer{padding:10px 12px;border-top:1px solid var(--muted);color:#9fb0c7;font-size:12px;display:flex;gap:12px;align-items:center}
+    .chip{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:999px;border:1px solid var(--muted);background:#0e1520}
+    .kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;border:1px solid var(--muted);background:#0b1118;padding:2px 6px;border-radius:6px;font-size:12px}
+    .out-list{font-size:12px;color:#cfe2ff;margin-top:6px;overflow:scroll;}
+    .muted{color:#9fb0c7}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- LEFT PANEL -->
+    <div class="panel left">
+      <div class="title">Video Cutter <span class="subtle">(ROI-style)</span></div>
+      <div class="subtle">1) Upload a video. 2) Add segments. 3) Choose output folder. 4) Cut.</div>
+
+      <div class="row" style="margin-top:10px;">
+        <input id="videoPicker" type="file" accept="video/*" />
+      </div>
+
+      <div class="row">
+        <label class="chip"><input type="radio" name="mode" value="fast" checked style="margin-right:6px;"> Fast (stream-copy)</label>
+        <label class="chip"><input type="radio" name="mode" value="precise" style="margin-left:8px;margin-right:6px;"> Precise (re-encode)</label>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="subtle">Segments</div>
+      <div class="row">
+        <input id="inTime" type="text" placeholder="Start (e.g. 0:12.5 or 12.5)" class="grow"/>
+        <input id="outTime" type="text" placeholder="End (e.g. 1:02.0)" class="grow"/>
+      </div>
+      <div class="row">
+        <button class="btn" id="markIn">Mark In (from playhead)</button>
+        <button class="btn" id="markOut">Mark Out (from playhead)</button>
+        <button class="btn good" id="addSeg">Add Segment</button>
+      </div>
+
+      <div class="seg-list" id="segList"></div>
+
+      <div class="row">
+        <button class="btn warn grow" id="clearSegs">Clear Segments</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="row">
+        <button class="btn good grow" id="cutBtn">Cut Segments</button>
+      </div>
+
+      <div class="divider"></div>
+      <div class="subtle">Saved outputs</div>
+      <div id="outputs" class="out-list muted"></div>
+      <div class="divider"></div>
+      <a href="./roi.html" target="_blank" class="btn">ROI Extractor Webpage</a>
+      <a href="./record.html" target="_blank" class="btn" style="margin-top: 10px;">Camera Recorder Webpage</a>
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div class="panel stage">
+      <div class="stage-top">
+        <div class="player">
+          <button class="btn" id="playPause">Play</button>
+          <input id="seek" type="range" min="0" max="1" step="0.001" value="0"/>
+          <span class="time" id="time">00:00 / 00:00</span>
+          <button class="btn" id="stepBack" title="-1/30s">◀︎</button>
+          <button class="btn" id="stepFwd" title="+1/30s">▶︎</button>
+        </div>
+        <div class="hint" id="hint">Upload a video to begin</div>
+      </div>
+
+      <div class="canvas-wrap">
+        <div class="backdrop" id="dropzone">
+          <div class="dropzone">
+            <div style="font-weight:700;font-size:18px;margin-bottom:6px;">Drop a video here</div>
+            <div>or use the file picker on the left.</div>
+            <div style="opacity:.9;margin-top:10px;">MP4 / WebM / Ogg</div>
+          </div>
+        </div>
+        <video id="video" preload="metadata" playsinline controls></video>
+      </div>
+
+      <div class="footer">
+        <span>Use <span class="kbd">Mark In</span> / <span class="kbd">Mark Out</span> from the playhead or type times. Format: <span class="kbd">sec</span> or <span class="kbd">mm:ss(.ms)</span> or <span class="kbd">hh:mm:ss(.ms)</span>.</span>
+      </div>
+    </div>
+  </div>
+
+<script>
+$(function(){
+  const $video = $('#video')[0];
+  const $seek = $('#seek');
+  const $time = $('#time');
+  const $playPause = $('#playPause');
+  const $drop = $('#dropzone');
+  const $outputs = $('#outputs');
+
+  let serverVideoPath = null; // path returned by /upload-video
+  let segments = []; // [{start,end} in seconds]
+
+  // ---- Helpers ----
+  function fmt(t){
+    if(!isFinite(t)) return '00:00';
+    const h = Math.floor(t/3600);
+    const m = Math.floor((t%3600)/60);
+    const s = Math.floor(t%60);
+    const mm = String(m).padStart(2,'0');
+    const ss = String(s).padStart(2,'0');
+    return (h>0? (String(h).padStart(2,'0')+':'):'') + mm + ':' + ss;
+  }
+  function parseTime(s){
+    if(s==null) return NaN;
+    s = String(s).trim();
+    if(!s) return NaN;
+    if(/^\d+(\.\d+)?$/.test(s)) return parseFloat(s); // seconds
+    const parts = s.split(':').map(Number);
+    if(parts.some(isNaN)) return NaN;
+    if(parts.length===2) return parts[0]*60 + parts[1];
+    if(parts.length===3) return parts[0]*3600 + parts[1]*60 + parts[2];
+    return NaN;
+  }
+  function refreshSegList(){
+    const $list = $('#segList').empty();
+    if(segments.length===0){ $list.append($('<div class="subtle">No segments yet.</div>')); return; }
+    segments.forEach((seg,idx)=>{
+      const $row = $(`
+        <div class="seg-item" data-idx="${idx}">
+          <input class="tStart" value="${fmt(seg.start)}" title="Start time"/>
+          <input class="tEnd" value="${fmt(seg.end)}" title="End time"/>
+          <div class="muted">${fmt(seg.end - seg.start)}</div>
+          <div style="text-align:right;">
+            <button class="icon-btn goTo" title="Seek to start">⏮</button>
+            <button class="icon-btn del" title="Remove">✕</button>
+          </div>
+        </div>
+      `);
+      $list.append($row);
+    });
+  }
+
+  function setPlaying(p){
+    if(p){ $video.play(); $playPause.text('Pause'); }
+    else { $video.pause(); $playPause.text('Play'); }
+  }
+  function updateTimeUI(){
+    $seek.attr({min:0, max: $video.duration || 1, step:0.001});
+    $seek.val($video.currentTime||0);
+    $time.text(`${fmt($video.currentTime||0)} / ${fmt($video.duration||0)}`);
+  }
+
+  // ---- Load / Upload ----
+  async function uploadVideo(file){
+    const fd = new FormData();
+    fd.append('video', file);
+    const res = await fetch('/upload-video', { method:'POST', body: fd });
+    if(!res.ok){ const t=await res.text(); throw new Error('Upload failed: '+t); }
+    const data = await res.json();
+    serverVideoPath = data.video_path;
+  }
+
+  function loadLocalVideo(file){
+    const url = URL.createObjectURL(file);
+    $video.src = url;
+    $video.load();
+  }
+
+  $('#videoPicker').on('change', async e=>{
+    const f = e.target.files[0];
+    if(!f) return;
+    loadLocalVideo(f);
+    try{
+      await uploadVideo(f);
+      $('#hint').text('Uploaded. Add segments and cut.');
+    }catch(err){
+      alert(err.message);
+    }
+  });
+
+  $drop.on('dragover', e=>{ e.preventDefault(); $drop.css('opacity','.9'); });
+  $drop.on('dragleave', e=>{ e.preventDefault(); $drop.css('opacity','1'); });
+  $drop.on('drop', async e=>{
+    e.preventDefault(); $drop.css('opacity','1');
+    const f = e.originalEvent.dataTransfer.files[0];
+    if(!f) return;
+    loadLocalVideo(f);
+    try{
+      await uploadVideo(f);
+      $('#hint').text('Uploaded. Add segments and cut.');
+    }catch(err){ alert(err.message); }
+  });
+
+  $video.addEventListener('loadedmetadata', ()=>{
+    $drop.hide();
+    updateTimeUI();
+  });
+  $video.addEventListener('timeupdate', updateTimeUI);
+
+  // ---- Player ----
+  $playPause.on('click', ()=> setPlaying($video.paused));
+  $('#stepBack').on('click', ()=>{ $video.pause(); setPlaying(false); $video.currentTime = Math.max(0, ($video.currentTime||0) - 1/30); });
+  $('#stepFwd').on('click', ()=>{ $video.pause(); setPlaying(false); $video.currentTime = Math.min($video.duration||0, ($video.currentTime||0) + 1/30); });
+  $seek.on('input', function(){ $video.currentTime = parseFloat(this.value)||0; });
+
+  // ---- Segments ----
+  $('#markIn').on('click', ()=> $('#inTime').val(($video.currentTime||0).toFixed(3)));
+  $('#markOut').on('click', ()=> $('#outTime').val(($video.currentTime||0).toFixed(3)));
+
+  $('#addSeg').on('click', ()=>{
+    const s = parseTime($('#inTime').val());
+    const e = parseTime($('#outTime').val());
+    if(!isFinite(s) || !isFinite(e) || e<=s){ alert('Invalid segment times.'); return; }
+    segments.push({start:s, end:e});
+    segments.sort((a,b)=>a.start-b.start);
+    refreshSegList();
+  });
+
+  $('#clearSegs').on('click', ()=>{ segments=[]; refreshSegList(); });
+
+  $('#segList').on('click', '.del', function(){
+    const idx = Number($(this).closest('.seg-item').data('idx'));
+    segments.splice(idx,1); refreshSegList();
+  });
+  $('#segList').on('click', '.goTo', function(){
+    const idx = Number($(this).closest('.seg-item').data('idx'));
+    $video.currentTime = segments[idx].start;
+    $video.pause(); setPlaying(false);
+  });
+  $('#segList').on('change', '.tStart, .tEnd', function(){
+    const $row = $(this).closest('.seg-item');
+    const idx = Number($row.data('idx'));
+    const t0 = parseTime($row.find('.tStart').val());
+    const t1 = parseTime($row.find('.tEnd').val());
+    if(isFinite(t0) && isFinite(t1) && t1>t0){
+      segments[idx] = {start:t0, end:t1};
+      refreshSegList();
+    }else{
+      alert('Invalid edited times.');
+    }
+  });
+
+  // ---- Cutting ----
+  $('#cutBtn').on('click', async ()=>{
+    if(!serverVideoPath){ alert('Upload a video first.'); return; }
+    if(segments.length===0){ alert('Add at least one segment.'); return; }
+    const baseName = 'clip'; // $('#baseName').val().trim() || 'clip';
+    const mode = $('input[name="mode"]:checked').val();
+
+    const payload = {
+        video_path: serverVideoPath,
+        base_name: baseName,
+        precise: (mode==='precise'),
+        segments: segments.map(s=>({start:s.start, end:s.end}))
+    };
+
+    $('#cutBtn').prop('disabled', true).text('Cutting…');
+    try {
+        const res = await fetch('/cut-video', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(payload)
+        });
+        if(!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        $outputs.removeClass('muted').append(
+            `<div><b>Saved in:</b> ${data.out_dir}</div>`
+        );
+    } catch(err) {
+        alert('Cut failed: ' + err.message);
+    } finally {
+        $('#cutBtn').prop('disabled', false).text('Cut Segments');
+    }
+    });
+
+});
+</script>
+</body>
+</html>
