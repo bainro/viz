@@ -18,8 +18,8 @@ from flask_cors import CORS
 # Config
 # -----------------------
 BASE_DIR = Path(__file__).resolve().parent
-UPLOAD_DIR = BASE_DIR / "uploads"
-RESULT_DIR = BASE_DIR / "results"
+UPLOAD_DIR = BASE_DIR / "recorded_sessions"
+RESULT_DIR = BASE_DIR / "detection_results"
 DB_PATH = BASE_DIR / "jobs.json"
 
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -252,58 +252,42 @@ def upload_video():
 def cut_video():
     data = request.get_json(silent=True) or {}
     src = data.get("video_path")
-    base_name = data.get("base_name") or "clip"
+    base_name = data.get("base_name") or ""
     precise = bool(data.get("precise", False))
     segs = data.get("segments") or []
 
+    print();print();print(src);print();print(base_name);print()
     if not src or not os.path.isfile(src):
         return jsonify(error="Invalid or missing 'video_path'."), 400
 
-    # Parent outputs dir under app root
-    outputs_root = BASE_DIR / "outputs"
-    outputs_root.mkdir(parents=True, exist_ok=True)
-
-    # Subdir per job (timestamped)
-    job_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_dir_path = outputs_root / job_id
+    # 🟢 Place split_videos/ in the same parent as the source
+    parent_dir = Path(src).parent
+    out_dir_path = parent_dir / "split_videos" / base_name[-4:] # files w/ more than 10 cams
     out_dir_path.mkdir(parents=True, exist_ok=True)
 
-    #outputs = []
+    outputs = []
     for i, seg in enumerate(segs, start=1):
         start = float(seg["start"])
         end = float(seg["end"])
-        duration = end - start
-        if duration <= 0:
+        if end <= start:
             return jsonify(error=f"Segment {i} has non-positive duration"), 400
 
-        out_name = f"{base_name}_{i:02d}.mp4"
-        out_path = str(out_dir_path / out_name)
+        out_name = f"{base_name}_clip_{i:02d}.mp4"
+        out_path = out_dir_path / out_name
+        run_ffmpeg_cut(src_path=src, start=start, end=end,
+                       out_path=str(out_path), precise=precise)
+        outputs.append(str(out_path))
 
-        run_ffmpeg_cut(src_path=src, start=start, end=end, out_path=out_path, precise=precise)
-        #outputs.append(out_path)
+    return jsonify(status="ok", out_dir=str(out_dir_path), outputs=outputs)
 
-    return jsonify(status="ok", job_id=job_id, out_dir=str(out_dir_path))
 
 @app.route("/export-roi-videos", methods=["POST"])
 def export_roi_videos():
-    """
-    JSON body:
-    {
-      "video_path": "/abs/path/to/source.mp4",
-      "rois": [
-        { "id": 1, "label": "ROI-1", "points": [[x,y], [x,y], ...] }, ...
-      ],
-      "margin": 0  // optional pixels to expand bbox
-    }
-    Output: creates outputs/rois/<job_id>/ with one MP4 per ROI (label + index)
-    """
-    if not has_ffmpeg():
-        return jsonify(error="ffmpeg not found on PATH"), 500
-
     data = request.get_json(silent=True) or {}
     src = data.get("video_path")
     rois = data.get("rois") or []
     margin = int(data.get("margin", 0))
+    base_name = data.get("base_name") or Path(src).stem
 
     if not src or not os.path.isfile(src):
         return jsonify(error="Invalid 'video_path'"), 400
@@ -318,88 +302,115 @@ def export_roi_videos():
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps    = cap.get(cv2.CAP_PROP_FPS) or 30.0
 
-    # Prepare output folder
-    out_root = BASE_DIR / "outputs" / "rois"
-    out_root.mkdir(parents=True, exist_ok=True)
-    job_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-    job_dir = out_root / job_id
-    job_dir.mkdir(parents=True, exist_ok=True)
+    parent_dir = Path(src).parent
+    out_dir_path = parent_dir / "roi_videos"
+    out_dir_path.mkdir(parents=True, exist_ok=True)
 
-    # Precompute per-ROI geometry + ffmpeg writers
-    writers = []  # [(proc, w, h)]
-    roi_meta = [] # [(label, x0,y0,x1,y1, shifted_pts, mask)]
+    writers, roi_meta = [], []
     for i, roi in enumerate(rois, start=1):
-        label = (roi.get("label") or f"ROI-{i}").replace(os.sep, "_")
+        # sanitize label for filenames
+        label = (roi.get("label") or f"roi{i}").replace(" ", "_")
         pts = np.array(roi["points"], dtype=np.float32)
 
-        # Bounding box + margin, clamped
+        # bounding box
         x0 = max(0, int(np.floor(pts[:,0].min())) - margin)
         y0 = max(0, int(np.floor(pts[:,1].min())) - margin)
         x1 = min(width-1, int(np.ceil(pts[:,0].max())) + margin)
         y1 = min(height-1, int(np.ceil(pts[:,1].max())) + margin)
-        w  = max(1, x1 - x0 + 1)
-        h  = max(1, y1 - y0 + 1)
+        w, h = max(1, x1-x0+1), max(1, y1-y0+1)
 
-        # Shifted polygon for the cropped ROI coordinate space
-        shifted = (pts - np.array([[x0, y0]], dtype=np.float32)).astype(np.int32)
-        shifted = shifted.reshape((-1,1,2))
-
-        # Static mask for entire video (inside polygon = 255, outside = 0)
+        shifted = (pts - np.array([[x0, y0]], dtype=np.float32)).astype(np.int32).reshape((-1,1,2))
         mask = np.zeros((h, w), dtype=np.uint8)
         cv2.fillPoly(mask, [shifted], 255)
 
-        out_path = job_dir / f"{i:02d}_{label}.mp4"
+        # 👉 output file now includes label
+        out_path = out_dir_path / f"{label}"
+        out_path.mkdir(parents=True, exist_ok=True)
+        out_path = out_path  / f"{base_name}.mp4"
 
-        # Stream frames to ffmpeg for libx264 encoding (yuv420p for compatibility)
         cmd = [
             "ffmpeg", "-loglevel", "error", "-y",
-            "-f", "rawvideo",
-            "-pix_fmt", "bgr24",
-            "-s", f"{w}x{h}",
-            "-r", f"{fps:.03f}",
+            "-f", "rawvideo", "-pix_fmt", "bgr24",
+            "-s", f"{w}x{h}", "-r", f"{fps:.03f}",
             "-i", "pipe:0",
             "-vf", "pad=width=ceil(iw/2)*2:height=ceil(ih/2)*2",
-            "-an",
-            "-c:v", "libx264", "-preset", "veryfast",
-            "-pix_fmt", "yuv420p",
-            str(out_path)
+            "-an", "-c:v", "libx264", "-preset", "veryfast",
+            "-pix_fmt", "yuv420p", str(out_path)
         ]
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
         writers.append((proc, w, h))
         roi_meta.append((label, x0, y0, x1, y1, shifted, mask))
 
-    # Read each frame once, dispatch to all ROI writers
+    # write frames
     try:
         while True:
             ok, frame = cap.read()
             if not ok:
                 break
-            # For each ROI: crop bbox, black out outside polygon, write to ffmpeg
             for (proc, w, h), meta in zip(writers, roi_meta):
                 _, x0, y0, x1, y1, _, mask = meta
                 crop = frame[y0:y1+1, x0:x1+1].copy()
-                # Black out outside polygon:
-                crop[mask == 0] = (0,0,0)
+                crop[mask==0] = (0,0,0)
                 proc.stdin.write(crop.tobytes())
     finally:
         cap.release()
-        for (proc, _, _ ) in writers:
-            try:
-                proc.stdin.close()
-                proc.wait()
-            except Exception:
-                pass
+        for proc, _, _ in writers:
+            try: proc.stdin.close(); proc.wait()
+            except: pass
 
-    return jsonify(status="ok", job_id=job_id, out_dir=str(job_dir))
+    return jsonify(status="ok", out_dir=str(out_dir_path))
+
+
 
 @app.route("/start-recording", methods=["POST"])
 def start_recording():
-    session_id = str(uuid.uuid4())
-    session_dir = os.path.join(UPLOAD_DIR, session_id)
-    os.makedirs(session_dir, exist_ok=True)
+    data = request.get_json(silent=True) or {}
+    basename = data.get("basename", "").strip()
 
-    sessions[session_id] = {"dir": session_dir, "cams": {}}
-    return jsonify({"session_id": session_id})
+    # timestamp-based session name
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    session_name = f"{timestamp}_{basename}" if basename else timestamp
+
+    session_dir = UPLOAD_DIR / session_name
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    session_id = str(uuid.uuid4())
+    sessions[session_id] = {
+        "dir": str(session_dir),
+        "session_name": session_name,
+        "cams": {}
+    }
+
+    return jsonify({"session_id": session_id, "session_dir": str(session_dir)})
+
+@app.route("/upload-chunk", methods=["POST"])
+def upload_chunk():
+    session_id = request.form.get("streamId")
+    cam_id = request.form.get("camId")
+    if session_id not in sessions:
+        return jsonify({"error": "Invalid session"}), 400
+
+    sess = sessions[session_id]
+    session_name = sess["session_name"]
+    session_dir = Path(sess["dir"])
+
+    if cam_id not in sess["cams"]:
+        # ✅ build filenames like 20250808_1212023_test_cam1.mp4
+        out_file = session_dir / f"{session_name}_cam{cam_id}.mp4"
+        ffmpeg_cmd = [
+            "ffmpeg", "-y", "-f", "webm", "-i", "pipe:0",
+            "-c:v", "libx264", "-preset", "veryfast",
+            str(out_file)
+        ]
+        proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE)
+        sess["cams"][cam_id] = {"proc": proc, "file": str(out_file)}
+
+    chunk = request.files["chunk"].read()
+    proc = sess["cams"][cam_id]["proc"]
+    proc.stdin.write(chunk)
+    proc.stdin.flush()
+
+    return jsonify({"status": f"chunk received for cam {cam_id}"})
 
 @app.route("/detect-color", methods=["POST"])
 def detect_color():
@@ -496,36 +507,6 @@ def detect_color():
                     pass
 
     return jsonify(status="ok", job_id=job_id, out_dir=str(job_dir))
-
-@app.route("/upload-chunk", methods=["POST"])
-def upload_chunk():
-    session_id = request.form.get("streamId")
-    cam_id = request.form.get("camId")  # '0' or '1'
-    if session_id not in sessions:
-        return jsonify({"error": "Invalid session"}), 400
-
-    # If this is the first chunk for this cam, start ffmpeg
-    if cam_id not in sessions[session_id]["cams"]:
-        output_file = os.path.join(sessions[session_id]["dir"], f"cam{cam_id}.mp4")
-        ffmpeg_cmd = [
-            "ffmpeg", "-y", "-f", "webm", "-i", "pipe:0",
-            "-c:v", "libx264", "-preset", "veryfast",
-            output_file
-        ]
-        #print(f"{ffmpeg_cmd=}")
-        proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE)
-        sessions[session_id]["cams"][cam_id] = {"proc": proc, "file": output_file}
-
-    chunk = request.files["chunk"].read()
-    proc = sessions[session_id]["cams"][cam_id]["proc"]
-
-    try:
-        proc.stdin.write(chunk)
-        proc.stdin.flush()
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-    return jsonify({"status": f"chunk received for cam {cam_id}"})
 
 @app.route("/stop-recording", methods=["POST"])
 def stop_recording():

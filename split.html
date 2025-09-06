@@ -39,7 +39,7 @@
     .time{font-variant-numeric:tabular-nums}
     input[type=range]{width:280px}
     .canvas-wrap{position:relative;flex:1;overflow:hidden;border-radius:14px}
-    .backdrop{position:absolute;inset:0;display:grid;place-items:center;background:radial-gradient(1200px 600px at 50% 10%,#121a24,#0d141d);border-bottom-left-radius:14px;border-bottom-right-radius:14px}
+    .backdrop{z-index: 5;position:absolute;inset:0;display:grid;place-items:center;background:radial-gradient(1200px 600px at 50% 10%,#121a24,#0d141d);border-bottom-left-radius:14px;border-bottom-right-radius:14px}
     .dropzone{border:2px dashed #304055;border-radius:12px;padding:18px 22px;color:#b6c2d1;text-align:center;max-width:560px}
     .dropzone b{color:#e6eef8}
     video{display:block;width:100%;height:100%;background:#0c1218;object-fit:contain;border-bottom-left-radius:14px;border-bottom-right-radius:14px}
@@ -61,7 +61,7 @@
         <input id="videoPicker" type="file" accept="video/*" />
       </div>
 
-      <div class="row">
+      <div class="row" style="display:none;">
         <label class="chip"><input type="radio" name="mode" value="fast" checked style="margin-right:6px;"> Fast (stream-copy)</label>
         <label class="chip"><input type="radio" name="mode" value="precise" style="margin-left:8px;margin-right:6px;"> Precise (re-encode)</label>
       </div>
@@ -72,11 +72,12 @@
       <div class="row">
         <input id="inTime" type="text" placeholder="Start (e.g. 0:12.5 or 12.5)" class="grow"/>
         <input id="outTime" type="text" placeholder="End (e.g. 1:02.0)" class="grow"/>
+        <button class="btn good" id="addSeg">Add Segment</button>
       </div>
-      <div class="row">
+      <div class="row" style="display:none;">
         <button class="btn" id="markIn">Mark In (from playhead)</button>
         <button class="btn" id="markOut">Mark Out (from playhead)</button>
-        <button class="btn good" id="addSeg">Add Segment</button>
+        
       </div>
 
       <div class="seg-list" id="segList"></div>
@@ -91,9 +92,11 @@
         <button class="btn good grow" id="cutBtn">Cut Segments</button>
       </div>
 
+      <!--
       <div class="divider"></div>
-      <div class="subtle">Saved outputs</div>
+      <div class="subtle" style="min-height: 80px; display:none;">Saved outputs</div>
       <div id="outputs" class="out-list muted"></div>
+      -->
       <div class="divider"></div>
       <a href="./record.html" target="_blank" class="btn" style="margin-top: 20px;">Camera Recorder Webpage</a>
         <a href="./roi.html" target="_blank" class="btn" style="margin-top: 20px;">ROI Extractor Webpage</a>
@@ -110,7 +113,7 @@
           <button class="btn" id="stepBack" title="-1/30s">◀︎</button>
           <button class="btn" id="stepFwd" title="+1/30s">▶︎</button>
         </div>
-        <div class="hint" id="hint">Upload a video to begin</div>
+        <div class="hint" id="hint" style="display:none;">Upload a video to begin</div>
       </div>
 
       <div class="canvas-wrap">
@@ -193,14 +196,19 @@ $(function(){
   }
 
   // ---- Load / Upload ----
-  async function uploadVideo(file){
-    const fd = new FormData();
-    fd.append('video', file);
-    const res = await fetch('/upload-video', { method:'POST', body: fd });
-    if(!res.ok){ const t=await res.text(); throw new Error('Upload failed: '+t); }
-    const data = await res.json();
-    serverVideoPath = data.video_path;
-  }
+async function uploadVideo(file){
+  const fname = file.name.replace(/^.*[\\\/]/, ''); // e.g. 20250906_001126_test2_cam1.mp4
+
+  // Extract prefix before "_camN"
+  const prefix = fname.split('_cam')[0];  // "20250906_001126_test2"
+
+  // Full relative path
+  serverVideoPath = `recorded_sessions/${prefix}/${fname}`;
+
+  console.log("Using existing video:", serverVideoPath);
+  return { video_path: serverVideoPath };
+}
+
 
   function loadLocalVideo(file){
     const url = URL.createObjectURL(file);
@@ -283,37 +291,48 @@ $(function(){
   });
 
   // ---- Cutting ----
-  $('#cutBtn').on('click', async ()=>{
-    if(!serverVideoPath){ alert('Upload a video first.'); return; }
-    if(segments.length===0){ alert('Add at least one segment.'); return; }
-    const baseName = 'clip'; // $('#baseName').val().trim() || 'clip';
-    const mode = $('input[name="mode"]:checked').val();
+  // ---- Cutting ----
+$('#cutBtn').on('click', async ()=>{
+  if(!serverVideoPath){ alert('Upload a video first.'); return; }
+  if(segments.length===0){ alert('Add at least one segment.'); return; }
 
-    const payload = {
-        video_path: serverVideoPath,
-        base_name: baseName,
-        precise: (mode==='precise'),
-        segments: segments.map(s=>({start:s.start, end:s.end}))
-    };
+  // derive basename from input filename
+let baseName = '';
+if (serverVideoPath) {
+  const parts = serverVideoPath.split(/[/\\]/);  // split on / or \
+  const fname = parts[parts.length - 1];         // e.g. 20250906_001126_test2_cam1.mp4
+  const stem = fname.replace(/\.[^/.]+$/, "");   // strip extension
+  baseName = stem;                               // → "20250906_001126_test2_cam1"
+}
 
-    $('#cutBtn').prop('disabled', true).text('Cutting…');
-    try {
-        const res = await fetch('/cut-video', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify(payload)
-        });
-        if(!res.ok) throw new Error(await res.text());
-        const data = await res.json();
-        $outputs.removeClass('muted').append(
-            `<div><b>Saved in:</b> ${data.out_dir}</div>`
-        );
-    } catch(err) {
-        alert('Cut failed: ' + err.message);
-    } finally {
-        $('#cutBtn').prop('disabled', false).text('Cut Segments');
-    }
+  const mode = $('input[name="mode"]:checked').val();
+
+const payload = {
+  video_path: serverVideoPath,
+  base_name: baseName,   // 🟢 full stem, not just cam
+  precise: (mode==='precise'),
+  segments: segments.map(s=>({start:s.start, end:s.end}))
+};
+
+  $('#cutBtn').prop('disabled', true).text('Cutting…');
+  try {
+    const res = await fetch('/cut-video', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
     });
+    if(!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    $outputs.removeClass('muted').append(
+      `<div><b>Saved in:</b> ${data.out_dir}</div>`
+    );
+  } catch(err) {
+    alert('Cut failed: ' + err.message);
+  } finally {
+    $('#cutBtn').prop('disabled', false).text('Cut Segments');
+  }
+});
+
 
 });
 </script>

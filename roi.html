@@ -92,13 +92,14 @@
         <input id="roiLabel" type="text" placeholder="Label (auto if blank)" class="grow" />
       </div>
 
+      <!--
       <div class="row">
         <button class="btn good grow" id="finishROI" title="Finish current ROI (or press Enter)">Finish ROI</button>
         <button class="btn warn" id="undoPoint" title="Undo last point (Z)">Undo</button>
         <button class="btn" id="cancelROI" title="Cancel current ROI (Esc)">Cancel</button>
       </div>
-
       <div class="divider"></div>
+      -->
 
       <div class="row" style="justify-content:space-between;">
         <div class="subtle">Defined ROIs</div>
@@ -129,12 +130,12 @@
         Processing ROI videos…
         </div>
 
+        <!--
         <div class="divider"></div>
-
         <div class="subtle">ROI export jobs</div>
         <div id="roiOutputs" class="subtle" style="overflow:scroll;">None yet.</div>
-
-                <div class="divider"></div>
+        <div class="divider"></div>
+        -->
 
 
         <a href="./record.html" target="_blank" class="btn" style="margin-top: 20px;">Camera Recorder Webpage</a>
@@ -200,14 +201,24 @@ $(function(){
 
     let serverVideoPath = null;
 
-    async function uploadVideoToServer(file){
-    const fd = new FormData();
-    fd.append('video', file);
-    const res = await fetch('/upload-video', { method:'POST', body: fd });
-    if(!res.ok) throw new Error(await res.text());
-    const data = await res.json();
-    return data.video_path;
-    }
+    // For ROI we don’t want to re-upload; just build the path directly
+  async function uploadVideoToServer(file){
+  // Strip extension
+  const fname = file.name.replace(/\.[^/.]+$/, "");  
+
+  // Get session folder by chopping off the _camN or clip part if needed
+  // e.g. "20250906_001126_test2_cam0" → "20250906_001126_test2"
+  //      "cam1_clip_02"              → still just fname but session inferred below
+  let sessionFolder = fname.replace(/_cam\d+$/i, "");
+  sessionFolder = sessionFolder.replace(/_clip_\d+$/i, "");
+
+  // Always put it under split_videos
+  const relPath = `recorded_sessions/${sessionFolder}/split_videos/${fname}.mp4`;
+  console.log(relPath)
+
+  return relPath;
+  }
+
 
   // palette
   const palette = ['#7dd3fc','#34d399','#fbbf24','#f472b6','#a78bfa','#60a5fa','#fb7185','#22d3ee','#a3e635','#f59e0b','#e879f9'];
@@ -363,9 +374,42 @@ $(function(){
   $('#importFile').on('change', (e)=>{ const f=e.target.files[0]; if(!f) return; const reader=new FileReader(); reader.onload=()=>{ try{ const data = JSON.parse(reader.result); if(!data.rois||!Array.isArray(data.rois)) throw new Error('Invalid JSON: missing rois[]'); rois = data.rois.map((r,i)=>({ id: r.id||i+1, label: r.label||`ROI-${i+1}`, type: r.type||'polygon', points: r.points.map(pt=>({x:pt[0]??pt.x, y:pt[1]??pt.y})), color: colorFor(i), visible:true })); nextId = Math.max(0, ...rois.map(r=>r.id))+1; selectedId = rois[0]?.id ?? null; refreshList(); }catch(err){ alert('Failed to import: '+err.message); } }; reader.readAsText(f); });
   $('#exportJSON').on('click', ()=>{ if(!mediaLoaded){ alert('Load a video first.'); return; } const payload = { image_size: [video.videoWidth, video.videoHeight], source: '', rois: rois.map(r=>({ id:r.id, label:r.label, type:r.type, points: r.points.map(p=>[Math.round(p.x), Math.round(p.y)]) })) }; const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href=url; a.download='rois.json'; a.click(); URL.revokeObjectURL(url); });
 
-  $('#exportROIVideos').on('click', async ()=>{
+$('#exportROIVideos').on('click', async ()=>{
   if(!mediaLoaded){ alert('Load a video first.'); return; }
   if(rois.length===0){ alert('Define at least one ROI.'); return; }
+
+  const fileInput = document.getElementById('videoPicker');
+  const f = fileInput.files[0];
+  if(!f) throw new Error("Please pick a video file first.");
+
+  // Get stem and parent session folder dynamically
+  const fname = f.name.replace(/\.[^/.]+$/, "");  
+// e.g. "20250906_001126_test2_cam1_clip_01"
+
+const sessionMatch = fname.match(/^(.*)_cam\d+/i);
+const sessionFolder = sessionMatch ? sessionMatch[1] : fname;
+
+// Extract camN (default to "cam0" if not found)
+const camMatch = fname.match(/(cam\d+)/i);
+const camId = camMatch ? camMatch[1] : "cam0";
+
+// Build baseDir using sessionFolder and camN
+const baseDir = `recorded_sessions/${sessionFolder}/split_videos/${camId}`;
+
+// Full path to the input clip
+serverVideoPath = `${baseDir}/${fname}.mp4`;
+
+  // Pass full clip stem
+  const payload = {
+    video_path: serverVideoPath,
+    base_name: fname,
+    margin: 0,
+    rois: rois.map(r => ({
+      id: r.id,
+      label: r.label,
+      points: r.points.map(p => [Math.round(p.x), Math.round(p.y)])
+    }))
+  };
 
   const $btn = $('#exportROIVideos');
   const $spinner = $('#roiSpinner');
@@ -373,21 +417,6 @@ $(function(){
   $spinner.removeClass('hidden');
 
   try {
-    const fileInput = document.getElementById('videoPicker');
-    const f = fileInput.files[0];
-    if(!f) throw new Error("Please pick a video file first.");
-    serverVideoPath = await uploadVideoToServer(f);
-
-    const payload = {
-      video_path: serverVideoPath,
-      margin: 0,
-      rois: rois.map(r => ({
-        id: r.id,
-        label: r.label,
-        points: r.points.map(p => [Math.round(p.x), Math.round(p.y)])
-      }))
-    };
-
     const res = await fetch('/export-roi-videos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -399,7 +428,6 @@ $(function(){
     const $out = $('#roiOutputs');
     if($out.text().trim() === 'None yet.') $out.empty();
     $out.append(`<div>Saved in: <b>${data.out_dir}</b></div>`);
-
   } catch(err) {
     alert('Export failed: ' + err.message);
   } finally {
@@ -407,6 +435,7 @@ $(function(){
     $spinner.addClass('hidden');
   }
 });
+
 
 
 

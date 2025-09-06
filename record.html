@@ -1,17 +1,9 @@
-<!--
-Dual‑Cam Recorder + ROI + DLC Overlay
-- Single-page HTML+JS app for: recording two webcams, ROI drawing, DLC overlay + CSV export
-- Minimal Flask backend stub to accept uploads, track job status, and simulate DLC output
-
-For webcam access, serve over http://localhost or use a simple static server (e.g., `python -m http.server 8080`).
--->
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dual‑Cam Recorder • ROI • DLC Overlay</title>
+  <title>Camera Recorder</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -121,12 +113,16 @@ For webcam access, serve over http://localhost or use a simple static server (e.
         <button class="btn" id="minPlus">+1m</button>
       </div>
       -->
+        <div class="row">
+        <label>Basename (optional)</label>
+        <input id="basename" type="text" placeholder="e.g. mouse1_session" />
+        </div>
+
       <div class="row">
         <button class="btn good grow" id="startRec">Start Recording</button>
         <button class="btn warn" id="stopRec" disabled>Stop</button>
       </div>
       <div class="row subtle">Elapsed: <span id="elapsed">00:00</span></div>
-
       <div class="divider"></div>
 
       <!--
@@ -462,10 +458,17 @@ async function startRecording(){
   recorders = new Array(n);
   chunks = new Array(n).fill(null).map(()=>[]);
 
-  // ask server for a session
-  const res = await fetch("/start-recording", { method: "POST" });
-  const { session_id } = await res.json();
+  const basename = $('#basename').val().trim();
+
+  // ask server for a session, send basename if any
+  const res = await fetch("/start-recording", { 
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ basename })
+  });
+  const { session_id, session_dir } = await res.json();
   window.sessionId = session_id;
+  window.sessionDir = session_dir; // cache this for later use
 
   for (let i=0;i<n;i++){
     const stream = streams[i];
