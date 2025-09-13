@@ -633,9 +633,7 @@ atexit.register(shutdown_worker)
 
 if __name__ == "__main__":
     url = "http://127.0.0.1:5000/record.html"
-    try:
-        webbrowser.open(url)   # ✅ open in default browser
-    except Exception as e:
-        print(f"Could not launch browser automatically: {e}")
-    # Run on 127.0.0.1:5000 to match your front-end's API base
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    if os.environ.get("WERKZEUG_RUN_MAIN") != "true":
+        print(f'{os.environ.get("WERKZEUG_RUN_MAIN")=}')
+        webbrowser.open(url)
+    app.run(host="127.0.0.1", port=5000, debug=True) 
