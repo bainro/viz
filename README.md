@@ -10,7 +10,7 @@ Then unzip it, open powershell and change to the unzipped directory:
 
 `cd C:\Users\rbain\Downloads\viz-main`
 
-Run the windows installation script:
+Run the installation script using powershell:
 
 `Set-ExecutionPolicy Bypass -Scope Process -Force
 .\install.ps1`
