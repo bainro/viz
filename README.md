@@ -1,7 +1,23 @@
+Visual discrimination code for tracking mice in the McNaughton lab.
+
 ### INSTALLATION ###
 
-tbd
+Download this repository:
+
+<img width="510" height="432" alt="image" src="https://github.com/user-attachments/assets/0533f590-2cb4-410c-a1e9-f34e12ec79aa" />
+
+Then unzip it.
 
 ### HOW TO USE ###
 
-tbd
+Open powershell and enter:
+
+`conda activate viz`
+
+Change to the directory where you've installed this github code repository:
+
+`cd C:\Users\rbain\Downloads\viz-main`
+
+Final step: Start the flask server.
+
+`python server.py`
