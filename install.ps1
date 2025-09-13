@@ -1,6 +1,11 @@
 # Install.ps1
 # Windows PowerShell script to install Miniconda, create "viz" env, and install dependencies
 
+# Ensure profile scripts can load (needed for conda init)
+# This sets policy only for the current user (safe, doesn't touch system-wide)
+Write-Host "Setting PowerShell execution policy to RemoteSigned for current user..."
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+
 # 1. Download Miniconda installer
 $MinicondaUrl = "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe"
 $InstallerPath = "$env:TEMP\Miniconda3-latest-Windows-x86_64.exe"
