@@ -12,8 +12,7 @@ Then unzip it, open powershell and change to the unzipped directory:
 
 Run the powershell installation script:
 
-`Set-ExecutionPolicy Bypass -Scope Process -Force
-.\install.ps1`
+`powershell -ExecutionPolicy Bypass -File .\install.ps1`
 
 ### HOW TO USE ###
 
