@@ -4,6 +4,7 @@
 # Ensure profile scripts can load (needed for conda init)
 # This sets policy only for the current user (safe, doesn't touch system-wide)
 Write-Host "Setting PowerShell execution policy to RemoteSigned for current user..."
+Set-ExecutionPolicy Bypass -Scope Process -Force
 Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
 
 # 1. Download Miniconda installer
