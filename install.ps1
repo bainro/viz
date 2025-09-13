@@ -1,28 +1,30 @@
 # Install.ps1
-# Windows PowerShell script to install Miniconda, create "viz" env, and install dependencies
+# Windows PowerShell script to install Miniconda, set execution policy,
+# create "viz" env, install dependencies, and unblock profile scripts
 
-# Ensure profile scripts can load (needed for conda init)
-# This sets policy only for the current user (safe, doesn't touch system-wide)
-#Write-Host "Setting PowerShell execution policy to RemoteSigned for current user..."
-#Set-ExecutionPolicy Bypass -Scope Process -Force
-#Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+# --- Execution policy setup ---
+# Ensure this session can run scripts
+Set-ExecutionPolicy Bypass -Scope Process -Force
 
-# 1. Download Miniconda installer
+# Try to persist a safer policy for this user
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+
+# --- 1. Download Miniconda installer ---
 $MinicondaUrl = "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe"
 $InstallerPath = "$env:TEMP\Miniconda3-latest-Windows-x86_64.exe"
 
 Write-Host "Downloading Miniconda installer..."
 Invoke-WebRequest -Uri $MinicondaUrl -OutFile $InstallerPath
 
-# 2. Install Miniconda silently
+# --- 2. Install Miniconda silently ---
 Write-Host "Installing Miniconda..."
 Start-Process -FilePath $InstallerPath -ArgumentList "/InstallationType=JustMe", "/AddToPath=1", "/S", "/D=$env:USERPROFILE\Miniconda3" -Wait
 
-# 3. Initialize conda for PowerShell
+# --- 3. Initialize conda for PowerShell ---
 $CondaExe = "$env:USERPROFILE\Miniconda3\Scripts\conda.exe"
 & $CondaExe init powershell
 
-# After running conda init
+# --- 4. Unblock profile scripts so conda init works ---
 $allProfiles = @(
     $PROFILE,
     $PROFILE.AllUsersAllHosts,
@@ -38,4 +40,19 @@ foreach ($p in $allProfiles) {
     } catch {}
 }
 
-Write-Host "Setup complete! Restart Powershell and navigate back here"
+# --- 5. Create viz environment and install dependencies ---
+Write-Host "Creating conda environment: viz"
+& $CondaExe create -y -n viz python=3.11
+
+Write-Host "Installing Python packages into viz..."
+& $CondaExe run -n viz pip install numpy opencv-python flask flask-cors werkzeug
+
+Write-Host "`n======================================="
+Write-Host " ✅ Miniconda installed"
+Write-Host " ✅ Conda initialized for PowerShell"
+Write-Host " ✅ viz environment created with dependencies"
+Write-Host "Next steps:"
+Write-Host " 1. Close this PowerShell window"
+Write-Host " 2. Open a new PowerShell"
+Write-Host " 3. Run: conda activate viz"
+Write-Host "======================================="
