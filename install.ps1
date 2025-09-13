@@ -3,9 +3,9 @@
 
 # Ensure profile scripts can load (needed for conda init)
 # This sets policy only for the current user (safe, doesn't touch system-wide)
-Write-Host "Setting PowerShell execution policy to RemoteSigned for current user..."
-Set-ExecutionPolicy Bypass -Scope Process -Force
-Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+#Write-Host "Setting PowerShell execution policy to RemoteSigned for current user..."
+#Set-ExecutionPolicy Bypass -Scope Process -Force
+#Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
 
 # 1. Download Miniconda installer
 $MinicondaUrl = "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe"
@@ -21,5 +21,21 @@ Start-Process -FilePath $InstallerPath -ArgumentList "/InstallationType=JustMe",
 # 3. Initialize conda for PowerShell
 $CondaExe = "$env:USERPROFILE\Miniconda3\Scripts\conda.exe"
 & $CondaExe init powershell
+
+# After running conda init
+$allProfiles = @(
+    $PROFILE,
+    $PROFILE.AllUsersAllHosts,
+    $PROFILE.AllUsersCurrentHost,
+    $PROFILE.CurrentUserAllHosts,
+    $PROFILE.CurrentUserCurrentHost
+) | Where-Object { Test-Path $_ }
+
+foreach ($p in $allProfiles) {
+    try {
+        Unblock-File -Path $p -ErrorAction SilentlyContinue
+        Write-Host "Unblocked profile script: $p"
+    } catch {}
+}
 
 Write-Host "Setup complete! Restart Powershell and navigate back here"
