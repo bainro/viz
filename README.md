@@ -14,7 +14,7 @@ Install conda:
 
 `powershell -ExecutionPolicy Bypass -File .\install_conda.ps1`
 
-Follow the instructions on screen. This will ask you to restart powershell in admin mode. Then setup the conda environment:
+Restart powershell in admin mode and setup the conda environment:
 
 `powershell -ExecutionPolicy Bypass -File .\setup_env.ps1`
 
