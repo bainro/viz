@@ -24,3 +24,11 @@ Invoke-WebRequest -Uri $MinicondaUrl -OutFile $InstallerPath
 # --- 2. Install Miniconda silently ---
 Write-Host "Installing Miniconda..."
 Start-Process -FilePath $InstallerPath -ArgumentList "/InstallationType=JustMe", "/AddToPath=1", "/S", "/D=$env:USERPROFILE\Miniconda3" -Wait
+
+Write-Host "`n======================================="
+Write-Host " ✅ Miniconda installed"
+Write-Host "Next steps:"
+Write-Host " 1. Close this PowerShell window"
+Write-Host " 2. Open a new PowerShell"
+Write-Host " 3. Run: conda activate viz"
+Write-Host "======================================="
