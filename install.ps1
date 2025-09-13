@@ -7,7 +7,13 @@
 Set-ExecutionPolicy Bypass -Scope Process -Force -ErrorAction SilentlyContinue
 
 # Try to persist a safer policy for this user
-Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+try {
+    Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force -ErrorAction Stop
+} catch [System.Management.Automation.PSSecurityException] {
+    Write-Host "ExecutionPolicy is locked by Group Policy. Skipping..."
+} catch {
+    Write-Host "Could not change execution policy: $($_.Exception.Message)"
+}
 
 # --- 1. Download Miniconda installer ---
 $MinicondaUrl = "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe"
