@@ -5,6 +5,7 @@ Visual discrimination code for tracking mice in the McNaughton lab.
 Download the github code repository as a zip:
 
 <img width="255" height="216" alt="image" src="https://github.com/user-attachments/assets/0533f590-2cb4-410c-a1e9-f34e12ec79aa" />
+
 Then unzip it, open powershell and enter:
 <br><br/>
 `Set-ExecutionPolicy Bypass -Scope Process -Force
