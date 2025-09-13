@@ -1,31 +1,35 @@
 # Install.ps1
-# Windows PowerShell script for setting up Miniconda and a conda env named "viz"
+# Windows PowerShell script to install Miniconda, create "viz" env, and install dependencies
 
-# 1. Download latest Miniconda installer (64-bit Windows)
+# 1. Download Miniconda installer
 $MinicondaUrl = "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe"
 $InstallerPath = "$env:TEMP\Miniconda3-latest-Windows-x86_64.exe"
 
 Write-Host "Downloading Miniconda installer..."
 Invoke-WebRequest -Uri $MinicondaUrl -OutFile $InstallerPath
 
-# 2. Run the installer silently
-Write-Host "Installing Miniconda silently..."
+# 2. Install Miniconda silently
+Write-Host "Installing Miniconda..."
 Start-Process -FilePath $InstallerPath -ArgumentList "/InstallationType=JustMe", "/AddToPath=1", "/S", "/D=$env:USERPROFILE\Miniconda3" -Wait
 
 # 3. Initialize conda for PowerShell
 $CondaExe = "$env:USERPROFILE\Miniconda3\Scripts\conda.exe"
 & $CondaExe init powershell
 
-# Reload shell so conda works
-Write-Host "Reloading PowerShell profile to enable conda..."
+# Reload profile
+Write-Host "Reloading PowerShell profile..."
 . $PROFILE
 
-# 4. Create the environment (if it doesn’t already exist)
+# 4. Create viz environment
 Write-Host "Creating conda environment: viz"
 & $CondaExe create -y -n viz python=3.11
 
-# 5. Activate environment
-Write-Host "Activating viz environment..."
+# 5. Install dependencies
+Write-Host "Installing Python packages..."
+& $CondaExe run -n viz pip install numpy opencv-python flask flask-cors werkzeug
+
+# 6. Activate environment
+Write-Host "Activating environment: viz"
 & $CondaExe activate viz
 
-Write-Host "Setup complete! Conda environment 'viz' is ready."
+Write-Host "Setup complete! Conda environment 'viz' is ready with all dependencies installed."
