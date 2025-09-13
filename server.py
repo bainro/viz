@@ -7,6 +7,7 @@ import uuid
 import queue
 import threading
 import subprocess
+import webbrowser 
 import numpy as np
 from pathlib import Path
 from datetime import datetime
@@ -631,5 +632,10 @@ import atexit
 atexit.register(shutdown_worker)
 
 if __name__ == "__main__":
+    url = "http://127.0.0.1:5000/record.html"
+    try:
+        webbrowser.open(url)   # ✅ open in default browser
+    except Exception as e:
+        print(f"Could not launch browser automatically: {e}")
     # Run on 127.0.0.1:5000 to match your front-end's API base
     app.run(host="127.0.0.1", port=5000, debug=True)
