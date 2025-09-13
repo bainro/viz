@@ -1,5 +1,6 @@
 # Install.ps1
-# PowerShell script to install Miniconda, set execution policy, & unblock profile scripts
+# PowerShell script to install Miniconda (if not already installed),
+# set execution policy, & unblock profile scripts
 
 # --- Execution policy setup ---
 # Ensure this session can run scripts
@@ -12,6 +13,21 @@ try {
     Write-Host "ExecutionPolicy is locked by Group Policy. Skipping..."
 } catch {
     Write-Host "Could not change execution policy: $($_.Exception.Message)"
+}
+
+# --- Detect existing conda installation ---
+$CondaExe = Get-Command conda -ErrorAction SilentlyContinue
+
+if ($CondaExe) {
+    Write-Host "`n======================================="
+    Write-Host " ✅ Conda is already installed at: $($CondaExe.Source)"
+    Write-Host "Skipping Miniconda installation."
+    Write-Host "Next steps:"
+    Write-Host " 1. Close this PowerShell window"
+    Write-Host " 2. Open a new PowerShell"
+    Write-Host " 3. Run: conda activate viz"
+    Write-Host "======================================="
+    exit 0
 }
 
 # --- 1. Download Miniconda installer ---
