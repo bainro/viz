@@ -18,6 +18,11 @@ foreach ($p in $allProfiles) {
     } catch {}
 }
 
+# 4.5 accept certain ch's
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/msys2
+
 # --- 5. Create viz environment and install dependencies ---
 Write-Host "Creating conda environment: viz"
 & $CondaExe create -y -n viz python=3.11
