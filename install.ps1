@@ -16,20 +16,4 @@ Start-Process -FilePath $InstallerPath -ArgumentList "/InstallationType=JustMe",
 $CondaExe = "$env:USERPROFILE\Miniconda3\Scripts\conda.exe"
 & $CondaExe init powershell
 
-# Reload profile
-Write-Host "Reloading PowerShell profile..."
-. $PROFILE
-
-# 4. Create viz environment
-Write-Host "Creating conda environment: viz"
-& $CondaExe create -y -n viz python=3.11
-
-# 5. Install dependencies
-Write-Host "Installing Python packages..."
-& $CondaExe run -n viz pip install numpy opencv-python flask flask-cors werkzeug
-
-# 6. Activate environment
-Write-Host "Activating environment: viz"
-& $CondaExe activate viz
-
-Write-Host "Setup complete! Conda environment 'viz' is ready with all dependencies installed."
+Write-Host "Setup complete! Restart Powershell and navigate back here"
