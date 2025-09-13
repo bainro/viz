@@ -9,10 +9,10 @@ try {
 }
 
 if ($CondaExe -match "Anaconda3") {
-    Write-Host " ✅ Anaconda detected at: $CondaExe"
+    Write-Host "🐁 Anaconda detected at: $CondaExe"
     Write-Host "Skipping conda init and unblock..."
 } else {
-    Write-Host " ✅ Miniconda (or no Anaconda) detected at: $CondaExe"
+    Write-Host "🐁 Miniconda (or no Anaconda) detected at: $CondaExe"
     Write-Host "Running conda init and unblock..."
     & $CondaExe init powershell
 
@@ -33,3 +33,5 @@ if ($CondaExe -match "Anaconda3") {
         }
     }
 }
+
+echo 'success!'
