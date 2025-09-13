@@ -10,13 +10,13 @@ Then unzip it, open powershell and change to the unzipped directory:
 
 `cd C:\Users\rbain\Downloads\viz-main`
 
-Run the first powershell installation script:
+Install conda:
 
-`powershell -ExecutionPolicy Bypass -File .\install_1.ps1`
+`powershell -ExecutionPolicy Bypass -File .\install_conda.ps1`
 
-Follow the instructions on screen. This will ask you to restart powershell in admin mode. Then run the final installation script:
+Follow the instructions on screen. This will ask you to restart powershell in admin mode. Then setup the conda environment:
 
-`powershell -ExecutionPolicy Bypass -File .\install_2.ps1`
+`powershell -ExecutionPolicy Bypass -File .\setup_env.ps1`
 
 ### HOW TO USE ###
 
