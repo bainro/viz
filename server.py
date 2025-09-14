@@ -184,48 +184,67 @@ def is_ffmpeg_available():
 def has_ffmpeg():
     return is_ffmpeg_available()
 
-def run_ffmpeg_cut(src_path: str, start: float, end: float, out_path: str, precise: bool):
+import subprocess
+import json
+import shlex
+
+def run_ffmpeg_cut(src_path: str, start: float, end: float, out_path: str):
     """
-    Cut [start, end) into out_path.
-    precise=True re-encodes for frame-accurate cuts.
-    precise=False uses stream copy (fast) but may cut on nearest keyframe.
+    Hybrid cut:
+      - If input is H.264 + AAC in MP4/MOV/MKV → fast stream copy
+      - Otherwise → re-encode w/ accurate seeking (fast seek + precise seek)
     """
     duration = max(0.0, end - start)
     if duration <= 0:
         raise ValueError("Non-positive segment duration.")
 
-    # Build command
-    if precise:
-        # Re-encode for accuracy; +faststart for web playback friendliness
-        cmd = [
-            "ffmpeg",
-            "-y",
-            "-ss", f"{start:.3f}",
-            "-i", src_path,
-            "-t", f"{duration:.3f}",
-            "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-c:a", "aac",
-            "-movflags", "+faststart",
-            out_path,
-        ]
-    else:
-        # Fast stream copy; may cut on keyframes.
-        cmd = [
-            "ffmpeg",
-            "-y",
-            "-ss", f"{start:.3f}",
-            "-i", src_path,
-            "-t", f"{duration:.3f}",
-            "-c", "copy",
-            "-avoid_negative_ts", "make_zero",
-            out_path,
-        ]
+    # --- Probe codecs ---
+    probe_cmd = [
+        "ffprobe", "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=codec_name", "-of", "json", src_path
+    ]
+    probe_out = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    video_codec = None
+    if probe_out.returncode == 0:
+        info = json.loads(probe_out.stdout)
+        if info.get("streams"):
+            video_codec = info["streams"][0].get("codec_name")
 
-    # Run
+    probe_cmd = [
+        "ffprobe", "-v", "error", "-select_streams", "a:0",
+        "-show_entries", "stream=codec_name", "-of", "json", src_path
+    ]
+    probe_out = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    audio_codec = None
+    if probe_out.returncode == 0:
+        info = json.loads(probe_out.stdout)
+        if info.get("streams"):
+            audio_codec = info["streams"][0].get("codec_name")
+
+    # --- Decide mode ---
+    #safe_copy = (video_codec == "h264" and (audio_codec in ("aac", None)))
+
+    fast_seek = max(0, start - 2.0)
+    precise_seek = start - fast_seek
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-ss", f"{fast_seek:.3f}",   # coarse seek
+        "-i", src_path,
+        "-ss", f"{precise_seek:.3f}",  # fine seek
+        "-t", f"{duration:.3f}",
+        "-c:v", "libx264", "-preset", "veryfast",
+        "-c:a", "aac",
+        "-movflags", "+faststart",
+        out_path,
+    ]
+
+    # --- Run command ---
     proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if proc.returncode != 0:
         raise RuntimeError(f"ffmpeg failed ({proc.returncode}):\n{proc.stderr[:1000]}")
+
+    return out_path
 
 # Keep track of recording sessions
 sessions = {}
@@ -257,7 +276,6 @@ def cut_video():
     precise = bool(data.get("precise", False))
     segs = data.get("segments") or []
 
-    print();print();print(src);print();print(base_name);print()
     if not src or not os.path.isfile(src):
         return jsonify(error="Invalid or missing 'video_path'."), 400
 
@@ -276,7 +294,7 @@ def cut_video():
         out_name = f"{base_name}_clip_{i:02d}.mp4"
         out_path = out_dir_path / out_name
         run_ffmpeg_cut(src_path=src, start=start, end=end,
-                       out_path=str(out_path), precise=precise)
+                       out_path=str(out_path))
         outputs.append(str(out_path))
 
     return jsonify(status="ok", out_dir=str(out_dir_path), outputs=outputs)

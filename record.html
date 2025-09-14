@@ -503,7 +503,7 @@ async function startRecording(){
 
   async function stopRecording(){
     recorders.forEach(r=>{ try{ r && r.state!=='inactive' && r.stop(); }catch(e){} });
-    streams.forEach(s=>{ try{ s && s.getTracks().forEach(t=>t.stop()); }catch(e){} });
+    //streams.forEach(s=>{ try{ s && s.getTracks().forEach(t=>t.stop()); }catch(e){} });
     clearInterval(recTimer); $('#stopRec').prop('disabled', true); $('#startRec').prop('disabled', false);
 
     await fetch("/stop-recording", {

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Video Cutter – (Front-End)</title>
+  <title>Video Splitter</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -54,8 +54,8 @@
   <div class="app">
     <!-- LEFT PANEL -->
     <div class="panel left" style="overflow-y:scroll;">
-      <div class="title">Video Cutter <span class="subtle">(ROI-style)</span></div>
-      <div class="subtle">1) Upload a video. 2) Add segments. 3) Choose output folder. 4) Cut.</div>
+      <div class="title">Video Splitter <span class="subtle"></span></div>
+      <div class="subtle">1) Upload an MP4 video. 2) Add segments. 3) Cut segments.</div>
 
       <div class="row" style="margin-top:10px;">
         <input id="videoPicker" type="file" accept="video/*" />
@@ -72,12 +72,11 @@
       <div class="row">
         <input id="inTime" type="text" placeholder="Start (e.g. 0:12.5 or 12.5)" class="grow"/>
         <input id="outTime" type="text" placeholder="End (e.g. 1:02.0)" class="grow"/>
-        <button class="btn good" id="addSeg">Add Segment</button>
       </div>
-      <div class="row" style="display:none;">
-        <button class="btn" id="markIn">Mark In (from playhead)</button>
-        <button class="btn" id="markOut">Mark Out (from playhead)</button>
-        
+      <div class="row" >
+        <button style="width:33%;" class="btn" id="markIn">Set<br/>Start</button>
+        <button style="width:33%;" class="btn" id="markOut">Set<br/>End</button>
+        <button style="width:33%;" class="btn good" id="addSeg">Add Segment</button>
       </div>
 
       <div class="seg-list" id="segList"></div>
@@ -119,16 +118,16 @@
       <div class="canvas-wrap">
         <div class="backdrop" id="dropzone">
           <div class="dropzone">
-            <div style="font-weight:700;font-size:18px;margin-bottom:6px;">Drop a video here</div>
+            <div style="font-weight:700;font-size:18px;margin-bottom:6px;">Drop an MP4 video here</div>
             <div>or use the file picker on the left.</div>
-            <div style="opacity:.9;margin-top:10px;">MP4 / WebM / Ogg</div>
+            <!-- <div style="opacity:.9;margin-top:10px;">MP4 / WebM / Ogg</div> -->
           </div>
         </div>
         <video id="video" preload="metadata" playsinline controls></video>
       </div>
 
       <div class="footer">
-        <span>Use <span class="kbd">Mark In</span> / <span class="kbd">Mark Out</span> from the playhead or type times. Format: <span class="kbd">sec</span> or <span class="kbd">mm:ss(.ms)</span> or <span class="kbd">hh:mm:ss(.ms)</span>.</span>
+        <span>Use <span class="kbd">Set Start</span> / <span class="kbd">Set End</span> from the playhead or type times. Format: <span class="kbd">sec</span> or <span class="kbd">mm:ss(.ms)</span> or <span class="kbd">hh:mm:ss(.ms)</span>.</span>
       </div>
     </div>
   </div>
