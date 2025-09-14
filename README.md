@@ -28,6 +28,6 @@ Change to the directory where you've installed this repository:
 
 `cd C:\Users\rbain\Downloads\viz-main`
 
-Final step: Start the flask server which should open a internet browser tab.
+Final step: Start the flask server which should open an internet browser tab.
 
 `python server.py`
