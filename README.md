@@ -6,7 +6,7 @@ Download the github code repository as a zip:
 
 <img width="255" height="216" alt="image" src="https://github.com/user-attachments/assets/0533f590-2cb4-410c-a1e9-f34e12ec79aa" />
 
-Then unzip it, open powershell and change to the unzipped directory:
+Then unzip it, run powershell as admin and change to the unzipped directory:
 
 `cd C:\Users\rbain\Downloads\viz-main`
 
