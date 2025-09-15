@@ -32,6 +32,21 @@ if ($CondaExe -match "Anaconda3") {
             Write-Host "DEBUG: Failed to unblock $p"
         }
     }
+
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/msys2
 }
 
-echo 'success!'
+# --- Create viz environment and install dependencies ---
+Write-Host "Creating conda environment: viz"
+& $CondaExe create -y -n viz python=3.11
+
+Write-Host "Installing Python packages into viz..."
+& $CondaExe run -n viz pip install numpy opencv-python flask flask-cors werkzeug
+
+Write-Host "`n======================================="
+Write-Host " ✅ Conda initialized for PowerShell"
+Write-Host " ✅ viz environment created with dependencies"
+Write-Host "INSTALL COMPLETED"
+Write-Host "======================================="
