@@ -22,7 +22,7 @@ Restart powershell in admin mode and setup the conda environment:
 
 ### HOW TO USE ###
 
-Open powershell and enter:
+Open a new powershell and enter:
 
 `conda activate viz`
 
