@@ -2,6 +2,8 @@ Visual discrimination code for tracking mice in the McNaughton lab.
 
 ### INSTALLATION ###
 
+If `ffmpeg` is not a recognized command in powershell install it (e.g. https://phoenixnap.com/kb/ffmpeg-windows).
+
 Download the github code repository as a zip:
 
 <img width="255" height="216" alt="image" src="https://github.com/user-attachments/assets/0533f590-2cb4-410c-a1e9-f34e12ec79aa" />
