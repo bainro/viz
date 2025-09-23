@@ -417,9 +417,10 @@ def upload_chunk():
         # ✅ build filenames like 20250808_1212023_test_cam1.mp4
         out_file = session_dir / f"{session_name}_cam{cam_id}.mp4"
         ffmpeg_cmd = [
-            "ffmpeg", "-y", "-f", "webm", "-i", "pipe:0",
-            "-c:v", "libx264", "-preset", "veryfast",
-            str(out_file)
+            "ffmpeg", "-y",
+            "-f", "webm", "-i", "pipe:0",
+            "-c", "copy",                # ✅ no transcoding, stream copy
+            str(out_file.with_suffix(".webm"))   # ✅ keep WebM container
         ]
         proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE)
         sess["cams"][cam_id] = {"proc": proc, "file": str(out_file)}
