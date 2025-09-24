@@ -437,14 +437,24 @@ async function startPreview(){
     const caps = track.getCapabilities();
     const settings = track.getSettings();
 
+    // ---- NEW: dynamic focus slider ----
+    let slider = document.getElementById(`focus${i}`);
     if (caps.focusDistance) {
-      const slider = document.getElementById(`focus${i}`);
+      if (!slider) {
+        // create one if it doesn't exist
+        slider = document.createElement("input");
+        slider.type = "range";
+        slider.id = `focus${i}`;
+        slider.style.cssText = "position:absolute;bottom:10px;left:10px;width:80%";
+        videoEl.parentElement.appendChild(slider);
+      }
       slider.min = caps.focusDistance.min;
       slider.max = caps.focusDistance.max;
       slider.step = caps.focusDistance.step || 1;
       slider.value = settings.focusDistance || caps.focusDistance.min;
+      slider.style.display = "block";
 
-      slider.addEventListener('input', async (e) => {
+      slider.oninput = async (e) => {
         try {
           await track.applyConstraints({
             advanced: [{ focusMode: "manual", focusDistance: parseFloat(e.target.value) }]
@@ -452,16 +462,17 @@ async function startPreview(){
         } catch (err) {
           console.warn(`Focus set failed for cam ${i+1}`, err);
         }
-      });
+      };
     } else {
-      // hide slider if not supported
-      document.getElementById(`focus${i}`).style.display = 'none';
+      if (slider) slider.remove(); // remove slider if unsupported
     }
+    // ---- end dynamic focus slider ----
   }
 
   $('#startRec').prop('disabled', false); 
   $('#stopRec').prop('disabled', true);
 }
+
 
 
 // Re-preview any time a cam selector changes
