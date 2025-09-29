@@ -380,13 +380,10 @@ def export_roi_videos():
     return jsonify(status="ok", out_dir=str(out_dir_path))
 
 
-
 @app.route("/start-recording", methods=["POST"])
 def start_recording():
     data = request.get_json(silent=True) or {}
     basename = data.get("basename", "").strip()
-
-    # timestamp-based session name
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     session_name = f"{timestamp}_{basename}" if basename else timestamp
 
@@ -413,24 +410,26 @@ def upload_chunk():
     session_name = sess["session_name"]
     session_dir = Path(sess["dir"])
 
+    # Create ffmpeg process once per camera
     if cam_id not in sess["cams"]:
-        # ✅ build filenames like 20250808_1212023_test_cam1.mp4
         out_file = session_dir / f"{session_name}_cam{cam_id}.mp4"
         ffmpeg_cmd = [
             "ffmpeg", "-y",
-            "-f", "webm", "-i", "pipe:0",
-            "-c", "copy",                # ✅ no transcoding, stream copy
-            str(out_file.with_suffix(".webm"))   # ✅ keep WebM container
+            "-f", "mp4", "-i", "pipe:0",   # ✅ input is MP4 chunks
+            "-c", "copy",                  # ✅ no transcoding
+            str(out_file)
         ]
         proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE)
         sess["cams"][cam_id] = {"proc": proc, "file": str(out_file)}
 
+    # Write chunk into ffmpeg’s stdin
     chunk = request.files["chunk"].read()
     proc = sess["cams"][cam_id]["proc"]
     proc.stdin.write(chunk)
     proc.stdin.flush()
 
     return jsonify({"status": f"chunk received for cam {cam_id}"})
+
 
 @app.route("/detect-color", methods=["POST"])
 def detect_color():
@@ -534,15 +533,21 @@ def stop_recording():
     if session_id not in sessions:
         return jsonify({"error": "Invalid session"}), 400
 
-    files = []
-    for _cam_id, cam in sessions[session_id]["cams"].items():
-        proc = cam["proc"]
-        proc.stdin.close()
-        proc.wait()
-        files.append(cam["file"])
+    sess = sessions.pop(session_id)
+    outputs = []
+    for cam_id, cam_info in sess["cams"].items():
+        proc = cam_info["proc"]
 
-    del sessions[session_id]
-    return jsonify({"status": "stopped", "outputs": files})
+        # 🛑 Close stdin so ffmpeg knows no more chunks are coming
+        proc.stdin.close()
+
+        # ✅ Wait for ffmpeg to finalize the file (write moov atom)
+        proc.wait()
+
+        outputs.append(cam_info["file"])
+
+    return jsonify({"status": "stopped", "outputs": outputs})
+
 
 @app.route("/<path:filename>")
 def static_files(filename):
