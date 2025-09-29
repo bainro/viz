@@ -437,24 +437,14 @@ async function startPreview(){
     const caps = track.getCapabilities();
     const settings = track.getSettings();
 
-    // ---- NEW: dynamic focus slider ----
-    let slider = document.getElementById(`focus${i}`);
     if (caps.focusDistance) {
-      if (!slider) {
-        // create one if it doesn't exist
-        slider = document.createElement("input");
-        slider.type = "range";
-        slider.id = `focus${i}`;
-        slider.style.cssText = "position:absolute;bottom:10px;left:10px;width:80%";
-        videoEl.parentElement.appendChild(slider);
-      }
+      const slider = document.getElementById(`focus${i}`);
       slider.min = caps.focusDistance.min;
       slider.max = caps.focusDistance.max;
       slider.step = caps.focusDistance.step || 1;
       slider.value = settings.focusDistance || caps.focusDistance.min;
-      slider.style.display = "block";
 
-      slider.oninput = async (e) => {
+      slider.addEventListener('input', async (e) => {
         try {
           await track.applyConstraints({
             advanced: [{ focusMode: "manual", focusDistance: parseFloat(e.target.value) }]
@@ -462,17 +452,16 @@ async function startPreview(){
         } catch (err) {
           console.warn(`Focus set failed for cam ${i+1}`, err);
         }
-      };
+      });
     } else {
-      if (slider) slider.remove(); // remove slider if unsupported
+      // hide slider if not supported
+      document.getElementById(`focus${i}`).style.display = 'none';
     }
-    // ---- end dynamic focus slider ----
   }
 
   $('#startRec').prop('disabled', false); 
   $('#stopRec').prop('disabled', true);
 }
-
 
 
 // Re-preview any time a cam selector changes
@@ -516,16 +505,28 @@ async function startRecording(){
   window.sessionId = session_id;
   window.sessionDir = session_dir; // cache this for later use
 
+  function getBestMimeType() {
+    // Prefer MP4/H.264 (universally decodable, hardware accelerated)
+    if (MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.42E01E')) {
+      return 'video/mp4;codecs=avc1.42E01E';
+    }
+    // Some Chromium builds only expose H.264 under WebM
+    if (MediaRecorder.isTypeSupported('video/webm;codecs=h264')) {
+      return 'video/webm;codecs=h264';
+    }
+    // Last resort: VP8 WebM
+    return 'video/webm;codecs=vp8';
+  }
+
   for (let i=0;i<n;i++){
     const stream = streams[i];
-    const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') 
-                   ? 'video/webm;codecs=vp9,opus' 
-                   : 'video/webm';
+    const mime = getBestMimeType();
+    console.log(mime);
     recorders[i] = new MediaRecorder(stream, { mimeType: mime });
     recorders[i].ondataavailable = e => {
       if (e.data && e.data.size > 0) {
         const formData = new FormData();
-        formData.append("chunk", e.data, `part-${Date.now()}.webm`);
+        formData.append("chunk", e.data, `part-${Date.now()}.${e.data.type.includes("mp4") ? "mp4" : "webm"}`);
         formData.append("streamId", window.sessionId);
         formData.append("camId", i);
         fetch("/upload-chunk", { method: "POST", body: formData });
@@ -546,34 +547,25 @@ async function startRecording(){
   $('#stopRec').prop('disabled', false);
 }
 
+async function stopRecording() {
+  recorders.forEach(r => {
+    try { r && r.state !== 'inactive' && r.stop(); }
+    catch(e) { console.warn(e); }
+  });
 
-  async function stopRecording(){
-    recorders.forEach(r=>{ try{ r && r.state!=='inactive' && r.stop(); }catch(e){} });
-    //streams.forEach(s=>{ try{ s && s.getTracks().forEach(t=>t.stop()); }catch(e){} });
-    clearInterval(recTimer); $('#stopRec').prop('disabled', true); $('#startRec').prop('disabled', false);
+  clearInterval(recTimer);
+  $('#stopRec').prop('disabled', true);
+  $('#startRec').prop('disabled', false);
 
-    await fetch("/stop-recording", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: window.sessionId })
-    });
+  // Wait a moment so last ondataavailable is flushed
+  await new Promise(r => setTimeout(r, 300));
 
-    // Build blobs
-    const blobs = [ new Blob(chunks[0], {type: chunks[0][0]?.type || 'video/webm'}), new Blob(chunks[1], {type: chunks[1][0]?.type || 'video/webm'}) ];
-    const durSec = Math.floor((Date.now()-recStart)/1000);
-
-    // Create local job entries and upload
-    for(let i=0;i<2;i++){
-      if(blobs[i].size===0) continue;
-      const name = `${nowStr()}_cam${i+1}.webm`;
-      const localUrl = URL.createObjectURL(blobs[i]);
-      const localId = Math.random().toString(36).slice(2);
-      //const job = { localId, serverId:null, name, cam:(i===0?'A':'B'), status:'queued', localUrl, duration:durSec, width: streams[i].getVideoTracks()[0].getSettings().width || 1280, height: streams[i].getVideoTracks()[0].getSettings().height || 720 };
-      //jobs.unshift(job);
-      //addJobItem(job);
-      //uploadJob(job, blobs[i]).catch(err=>{ console.error(err); updateJob(job.localId,{status:'error'}); });
-    }
-  }
+  await fetch("/stop-recording", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: window.sessionId })
+  });
+}
 
   async function uploadJob(job, blob){
     const fd = new FormData();
